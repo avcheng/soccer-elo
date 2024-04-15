@@ -110,7 +110,7 @@ We <- function(r1, r2, gamma=0) {
   return ((1 + 10**(-(r1-r2+gamma)/400))**(-1))
 }
 
-elo.g <- function(df, init=1500, k0=30, lambda=0, gamma=0) {
+elo.g <- function(df, init=1500, status=NULL, k0=30, lambda=0, gamma=0) {
   # Set up matrix of ratings, with one for each date
   teams <- unique(df$home)
   dates <- unique(df$date)
@@ -118,14 +118,19 @@ elo.g <- function(df, init=1500, k0=30, lambda=0, gamma=0) {
   dimnames(history) <- list(teams, c('init', dates))
   
   # Set initial ratings
-  history[,1] <- init
-  ratings <- 0
-  if (length(init) > 1 ) {
-    ratings <- init
+  ratings <- numeric(0)
+  if (!is.null(status)) {
+    for (i in 1:length(teams)) {
+      history[teams[i],1] <- ifelse(!is.na(status[teams[i]]),status[teams[i]],
+                                    NA)
+      ratings[teams[i]] <- ifelse(!is.na(status[teams[i]]), status[teams[i]],
+                                  init)
+    }
   } else {
+    history[,1] <- init
     ratings <- rep(init, length(teams))
+    names(ratings) <- teams
   }
-  names(ratings) <- teams
   
   # Loop through games, and update ratings
   for (i in 1:dim(df)[1]) {
@@ -147,7 +152,14 @@ elo.g <- function(df, init=1500, k0=30, lambda=0, gamma=0) {
   return(list('ratings'=ratings, 'history'=history))
 }
 
-my.elo <- elo.g(mls.g)
+##### Function to predict outcomes based on elo ratings
+
+predict.elo.g <- function(ratings, df, gamma=0) {
+  row.We <- function(row) {
+    return (We(ratings[[row['home']]], ratings[[row['away']]], gamma=gamma))
+  }
+  return (apply(df, 1, row.We))
+}
 
 ##### Compare our function to elo in PlayerRatings package
 mls.mini <- mls[1:50,]
@@ -174,32 +186,31 @@ kfac.init <- 30
 
 # Skeleton from hw5 that needs to be updated with our functions and data
 for (j in 1:dim(log.likelihood.hfa)[1]) {
-  ratings.elo <- elo.g(nrl.clean[nrl.clean$season==2009,], init=1500, 
+  ratings.elo <- elo.g(mls.g[mls.g$year==2002,], init=1500, 
                        k0=kfac.init, 
                        gamma=0)
-  ratings.elo <- elo(nrl.clean[nrl.clean$season>=2009 & 
-                                 nrl.clean$season <= 2018,], 
-                     kfac = log.likelihood.hfa[j, 'K'], 
-                     status=ratings.elo$ratings, 
-                     gamma=log.likelihood.hfa[j, 'gamma'], 
-                     sort=FALSE)
+  ratings.elo <- elo.g(mls.g[mls.g$year>2002 & mls.g$year <= 2017,], 
+                       status=ratings.elo$ratings, 
+                       init=1500,
+                       k0=log.likelihood.hfa[j, 'k0'], 
+                       lambda=log.likelihood.hfa[j, 'lambda'])
   
   # Validation on val set
   ll.tmp = 0
-  for (val.year in 2019:2022){
-    pred = predict(ratings.elo, nrl.clean[nrl.clean$season==val.year,], 
-                   gamma=log.likelihood.hfa[j, 'gamma'])
+  for (val.year in 2018:2022){
+    pred <- predict.elo.g(ratings.elo$ratings, mls.g[mls.g$year==val.year,], 
+                          gamma=0)
     # Log-likelihood
     ll.tmp <- ll.tmp +
-      sum(nrl.clean[nrl.clean$season==val.year,]$outcome * log(pred) +
-            (1 - nrl.clean[nrl.clean$season==val.year,]$outcome) * 
+      sum(mls.g[mls.g$year==val.year,]$result * log(pred) +
+            (1 - mls.g[mls.g$year==val.year,]$result) * 
             log(1-pred))
     # Update model 
-    ratings.elo <- elo(nrl.clean[nrl.clean$season==val.year,], 
-                       kfac = log.likelihood.hfa[j, 'K'], 
-                       status = ratings.elo$ratings, 
-                       gamma=log.likelihood.hfa[j, 'gamma'], 
-                       sort=FALSE)
+    ratings.elo <- elo.g(mls.g[mls.g$year==val.year,], 
+                         k0 = log.likelihood.hfa[j, 'k0'], 
+                         init=1500,
+                         status = ratings.elo$ratings, 
+                         lambda=log.likelihood.hfa[j, 'lambda'])
   }
   log.likelihood.hfa[j, 'll'] = ll.tmp
 }
