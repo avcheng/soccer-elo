@@ -348,13 +348,20 @@ time.C.pred <- predict(result.fit, newdata=time.C.df)
 #       ARE WRONG
 pred.prob <- function(df, coef, zeta) {
   mini.fn <- function(row) {
+    # print(typeof(row[['rating.diff']]))
+    # print(row[['rating.diff']])
+    p.loss <- (1 + exp(zeta[[1]] - as.double(row[['rating.diff']]) * 
+                         coef[[1]]))**(-1)
+    p.tie <- 1 - p.loss
+    p.win <- 1 - (1 + exp(zeta[[2]] - as.double(row[['rating.diff']]) * 
+                            coef[[1]]))**(-1)
     if (row['result'] <= 0 ) {
-      return((1 + exp(zeta[[1]] - row['rating.diff'] * coef[[1]]))**(-1))
+      return(p.loss)
     } 
     if (row['result'] <= 0.5) {
-      return((1 + exp(zeta[[2]] - row['rating.diff'] * coef[[1]]))**(-1))
+      return(p.tie)
     }
-    return(1 - (1 + exp(zeta[[2]] - row['rating.diff'] * coef[[1]]))**(-1))
+    return(p.win)
   }
   return(apply(df, 1, mini.fn))
 }
@@ -364,13 +371,13 @@ pred.prob(time.C.df, result.fit$coefficients, result.fit$zeta)
 quad.loss <- function(y, y.pred) {
   return (mean((y - y.pred)**2))
 }
-info.loss <- function(y, coef, zeta) {
-   return( sum(-1 * log2(pred.prob(y, coef, zeta))) )
+info.loss <- function(df, coef, zeta) {
+   return(mean(-1 * log2(pred.prob(df, coef, zeta))))
 }
 
 # Calculate loss
 quad.loss(time.C.df$result, as.double(time.C.pred) / 2 - 0.5)
-
+info.loss(time.C.df, result.fit$coefficients, result.fit$zeta)
 
 
 
