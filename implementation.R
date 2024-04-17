@@ -344,8 +344,6 @@ time.C.df$rating.diff <- time.C.df$home.rating + gamma - time.C.df$away.rating
 time.C.pred <- predict(result.fit, newdata=time.C.df)
 
 # Define function to get model's predicted probability for the true outcome
-# NOTE: THIS FUNCTION IS NOT FULLY FUNCTIONAL AND I THINK SOME OF THE FORMULAS 
-#       ARE WRONG
 pred.prob <- function(df, coef, zeta) {
   mini.fn <- function(row) {
     # print(typeof(row[['rating.diff']]))
