@@ -40,6 +40,8 @@ mls.regular.season[mls.regular.season['home'] == 'MetroStars',
                        'home'] = 'New York Red Bulls'
 mls.regular.season[mls.regular.season['home'] == 'Tampa Bay', 
                        'home'] = 'Tampa Bay Mutiny'
+mls.regular.season[mls.regular.season['home'] == 'LAFC', 
+                   'home'] = 'Los Angeles FC'
 
 mls.regular.season[mls.regular.season['away'] == 'Chicago', 
                        'away'] = 'Chicago Fire FC'
@@ -69,6 +71,8 @@ mls.regular.season[mls.regular.season['away'] == 'MetroStars',
                    'away'] = 'New York Red Bulls'
 mls.regular.season[mls.regular.season['away'] == 'Tampa Bay', 
                    'away'] = 'Tampa Bay Mutiny'
+mls.regular.season[mls.regular.season['away'] == 'LAFC', 
+                   'away'] = 'Los Angeles FC'
 
 
 mls.regular.season$result <- 0.5
@@ -112,10 +116,10 @@ We <- function(r1, r2, gamma=0) {
 
 elo.g <- function(df, init=1500, status=NULL, k0=30, lambda=0, gamma=0) {
   # Set up matrix of ratings, with one for each date
-  teams <- unique(df$home)
-  dates <- unique(df$date)
-  history <- matrix(data=NA, nrow=length(teams), ncol=length(dates)+1)
-  dimnames(history) <- list(teams, c('init', dates))
+  teams <- unique(mls.regular.season$home)
+  years <- as.character(unique(df$year))
+  history <- matrix(data=NA, nrow=length(teams), ncol=length(years)+1)
+  dimnames(history) <- list(teams, c('init', years))
   
   # Set initial ratings
   ratings <- numeric(0)
@@ -134,8 +138,7 @@ elo.g <- function(df, init=1500, status=NULL, k0=30, lambda=0, gamma=0) {
   
   # Loop through games, and update ratings
   for (i in 1:dim(df)[1]) {
-    ratings[df[i, 'home']] <-
-      ratings[df[i, 'home']] + k0*(1 + abs(df[i, 'gd']))**lambda * 
+    ratings[df[i, 'home']] <- ratings[df[i, 'home']] + k0*(1 + abs(df[i, 'gd']))**lambda * 
       (df[i, 'result'] - We(ratings[df[i, 'home']], ratings[df[i, 'away']], 
                             gamma=gamma))
     
@@ -144,8 +147,8 @@ elo.g <- function(df, init=1500, status=NULL, k0=30, lambda=0, gamma=0) {
       ((1 - df[i, 'result']) - We(ratings[df[i, 'away']], 
                                   ratings[df[i, 'home']], gamma=gamma))
     
-    history[df[i, 'home'], df[i, 'date']] <- ratings[df[i, 'home']]
-    history[df[i, 'away'], df[i, 'date']] <- ratings[df[i, 'away']]
+    history[df[i, 'home'], as.character(df[i, 'year'])] <- ratings[df[i, 'home']]
+    history[df[i, 'away'], as.character(df[i, 'year'])] <- ratings[df[i, 'away']]
   }
   
   
@@ -168,11 +171,11 @@ elo.mini <- elo(mls.mini, init=1500, gamma=0, kfac=30)
 elo.g.mini <- elo.g(mls.g.mini)
 # These results are fairly close to one another, but are not exactly the same
 
-elo.g.full <- elo.g(mls.g)
+elo.g.full <- elo.g(mls.g, status=NULL, k0=30, lambda=0, gamma=0)
 elo.full <- elo(mls, init=1500, gamma=0, kfac=30, history=FALSE, sort=FALSE)
 plot(elo.g.full$ratings[elo.full$ratings$Player] ~ elo.full$ratings$Rating)
 cor(elo.g.full$ratings[elo.full$ratings$Player], elo.full$ratings$Rating)
-# So are these — possible sources of error? 
+# So are these — possible sources of error? 
 
 elo.g(mls.g, init=elo.g.full$ratings)$ratings
 
@@ -191,7 +194,6 @@ for (j in 1:dim(log.likelihood.hfa)[1]) {
                        gamma=0)
   ratings.elo <- elo.g(mls.g[mls.g$year>2002 & mls.g$year <= 2017,], 
                        status=ratings.elo$ratings, 
-                       init=1500,
                        k0=log.likelihood.hfa[j, 'k0'], 
                        lambda=log.likelihood.hfa[j, 'lambda'])
   
@@ -208,24 +210,30 @@ for (j in 1:dim(log.likelihood.hfa)[1]) {
     # Update model 
     ratings.elo <- elo.g(mls.g[mls.g$year==val.year,], 
                          k0 = log.likelihood.hfa[j, 'k0'], 
-                         init=1500,
                          status = ratings.elo$ratings, 
                          lambda=log.likelihood.hfa[j, 'lambda'])
   }
   log.likelihood.hfa[j, 'll'] = ll.tmp
 }
 
+best.ind = which(log.likelihood.hfa["ll"] == max(log.likelihood.hfa["ll"]))
+best.k = log.likelihood.hfa[best.ind,]["k0"][[1]]
+best.lambda = log.likelihood.hfa[best.ind,]["lambda"][[1]]
+
+acast(log.likelihood.hfa, k0~lambda, value.var="ll")
+m = as.matrix(acast(log.likelihood.hfa, k0~lambda, value.var="ll"))
+
+image(m, xaxt="n", yaxt="n")
+axis(1, at=seq(0,1,length.out=ncol(m)), 
+     labels= paste("lambda", colnames(m)), las= 2 )
+axis(2, at=seq(0,1,length.out=nrow(m)), 
+     labels= paste("k", rownames(m)), las= 2)
 
 
-
-
-
-
-
-
-
-
-
+ratings.elo = elo.g(mls.g[mls.g$year==2002,], init=1500, k0=best.k, gamma=0)
+ratings.elo = elo.g(mls.g[mls.g$year>2002 & mls.g$year <= 2017,], status=ratings.elo$ratings, 
+                                        k0=best.k, 
+                                        lambda=best.lambda)
 
 
 
