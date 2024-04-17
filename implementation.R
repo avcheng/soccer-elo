@@ -348,11 +348,12 @@ pred.prob <- function(df, coef, zeta) {
   mini.fn <- function(row) {
     # print(typeof(row[['rating.diff']]))
     # print(row[['rating.diff']])
-    p.loss <- (1 + exp(zeta[[1]] - as.double(row[['rating.diff']]) * 
-                         coef[[1]]))**(-1)
-    p.tie <- 1 - p.loss
-    p.win <- 1 - (1 + exp(zeta[[2]] - as.double(row[['rating.diff']]) * 
-                            coef[[1]]))**(-1)
+    p.loss <- (1 + exp((-1)*(zeta[[1]] - as.double(row[['rating.diff']]) * 
+                         coef[[1]])))**(-1)
+    p.tie <- (1 + exp((-1)*(zeta[[2]] - as.double(row[['rating.diff']]) * 
+                              coef[[1]])))**(-1) - p.loss
+    p.win <- 1 - (1 + exp((-1)*(zeta[[2]] - as.double(row[['rating.diff']]) * 
+                            coef[[1]])))**(-1)
     if (row['result'] <= 0 ) {
       return(p.loss)
     } 
@@ -378,10 +379,47 @@ quad.loss(time.C.df$result, as.double(time.C.pred) / 2 - 0.5)
 info.loss(time.C.df, result.fit$coefficients, result.fit$zeta)
 
 
+##### Recreate Fig. 3 for our ordered logit model
+dummy.diff <- -400:400
+dummy.loss.df <- data.frame('result'=as.factor(rep(0, length(dummy.diff))), 
+                            'rating.diff'=dummy.diff)
+dummy.loss.df$prob <- pred.prob(dummy.loss.df, result.fit$coefficients, 
+                                result.fit$zeta)
+dummy.draw.df <- data.frame('result'=as.factor(rep(0.5, length(dummy.diff))), 
+                            'rating.diff'=dummy.diff)
+dummy.draw.df$prob <- pred.prob(dummy.draw.df, result.fit$coefficients, 
+                                result.fit$zeta)
+dummy.win.df <- data.frame('result'=as.factor(rep(1, length(dummy.diff))), 
+                           'rating.diff'=dummy.diff)
+dummy.win.df$prob <- pred.prob(dummy.win.df, result.fit$coefficients, 
+                               result.fit$zeta)
 
+# png('pred-prob_vs_rating-diff.png', width=600, height=500)
+plot(dummy.loss.df$prob ~ dummy.loss.df$rating.diff, col='red', type='l', 
+     main="Ordered Logit Predicted Probabilities vs. Rating Difference", 
+     ylab="Predicted Probability",
+     xlab="Rating Difference")
+lines(dummy.draw.df$prob ~ dummy.draw.df$rating.diff, col='purple')
+lines(dummy.win.df$prob ~ dummy.win.df$rating.diff, col='blue')
+legend(200,0.5, c('Home Loss', 'Draw', 'Home Win'), 
+       col=c('red', 'purple', 'blue'), lty=1)
+# dev.off()
 
-
-
+##### Find our estimated 'HFA' effect as H&A did
+approx.effect <- dummy.loss.df[which.min(abs(dummy.loss.df$prob - 
+                                               dummy.win.df$prob)), 
+                               'rating.diff']
+range <- ((approx.effect-5)*100):((approx.effect+5)*100) / 100
+prob.diffs <- rep(-1e6, length(range))
+for (i in 1:length(range)) {
+  df.l <- data.frame('rating.diff'=range[i], 'result'=0)
+  df.l$p <- pred.prob(df.l, result.fit$coefficients, result.fit$zeta)
+  df.w <- data.frame('rating.diff'=range[i], 'result'=1)
+  df.w$p <- pred.prob(df.w, result.fit$coefficients, result.fit$zeta)
+  
+  prob.diffs[i] <- abs(df.l$p - df.w$p)
+}
+hfa.est <- range[which.min(prob.diffs)]
 
 
 
