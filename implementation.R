@@ -137,20 +137,27 @@ elo.g <- function(df, init=1500, status=NULL, k0=30, lambda=0, gamma=0) {
   }
   
   # Loop through games, and update ratings
-  for (i in 1:dim(df)[1]) {
-    ratings[df[i, 'home']] <- ratings[df[i, 'home']] + k0*(1 + abs(df[i, 'gd']))**lambda * 
-      (df[i, 'result'] - We(ratings[df[i, 'home']], ratings[df[i, 'away']], 
-                            gamma=gamma))
-    
-    ratings[df[i, 'away']] <- 
-      ratings[df[i, 'away']] + k0*(1 + abs(df[i, 'gd']))**lambda * 
-      ((1 - df[i, 'result']) - We(ratings[df[i, 'away']], 
-                                  ratings[df[i, 'home']], gamma=gamma))
-    
-    history[df[i, 'home'], as.character(df[i, 'year'])] <- ratings[df[i, 'home']]
-    history[df[i, 'away'], as.character(df[i, 'year'])] <- ratings[df[i, 'away']]
+  for (y in min(years):max(years)) {
+    temp_ratings = ratings
+    year_df = df[df$year == as.integer(y),]
+    for (i in 1:dim(year_df)[1]) {
+      temp_ratings[year_df[i, 'home']] <- temp_ratings[year_df[i, 'home']] + 
+        k0*(1 + abs(year_df[i, 'gd']))**lambda * 
+        (year_df[i, 'result'] - 
+        We(ratings[year_df[i, 'home']], ratings[year_df[i, 'away']], 
+                              gamma=gamma))
+      
+      temp_ratings[year_df[i, 'away']] <- temp_ratings[year_df[i, 'away']] + 
+        k0*(1 + abs(year_df[i, 'gd']))**lambda * 
+        ((1 - year_df[i, 'result']) - We(ratings[year_df[i, 'away']], 
+                                    ratings[year_df[i, 'home']], gamma=gamma))
+    }
+    print(temp_ratings)
+    print(ratings)
+    ratings = temp_ratings
+    history[df$Player, as.character(df[i, 'year'])] <- ratings
+    history[df$Player, as.character(df[i, 'year'])] <- ratings
   }
-  
   
   return(list('ratings'=ratings, 'history'=history))
 }
