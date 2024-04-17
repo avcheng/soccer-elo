@@ -1,7 +1,8 @@
 library(PlayerRatings)
+library(reshape2)
 library(MASS) # required for ordinal logistic regression
 
-##### Data Wrangingling
+##### Data Wrangling
 mls.original <- read.csv('data/mls2001-2021.csv')
 mls.big <- mls.original[,c('home', 'away', 'date', 'year', 'venue', 'league', 
                            'game_status', 'shootout', 'home_score', 
@@ -152,11 +153,12 @@ elo.g <- function(df, init=1500, status=NULL, k0=30, lambda=0, gamma=0) {
         ((1 - year_df[i, 'result']) - We(ratings[year_df[i, 'away']], 
                                     ratings[year_df[i, 'home']], gamma=gamma))
     }
-    print(temp_ratings)
-    print(ratings)
+    # print(temp_ratings)
+    # print(ratings)
     ratings = temp_ratings
-    history[df$Player, as.character(df[i, 'year'])] <- ratings
-    history[df$Player, as.character(df[i, 'year'])] <- ratings
+    # history[df$Player, as.character(df[i, 'year'])] <- ratings
+    # history[df$Player, as.character(df[i, 'year'])] <- ratings
+    history[,as.character(y)] <- ratings
   }
   
   return(list('ratings'=ratings, 'history'=history))
@@ -176,25 +178,22 @@ mls.mini <- mls[1:50,]
 mls.g.mini <- mls.g[1:50,]
 elo.mini <- elo(mls.mini, init=1500, gamma=0, kfac=30)
 elo.g.mini <- elo.g(mls.g.mini)
-# These results are fairly close to one another, but are not exactly the same
 
+##### Check correspondence between ratings from PlayerRatings package 
+##### and our own implementation; checks now show ours is working properly
 elo.g.full <- elo.g(mls.g, status=NULL, k0=30, lambda=0, gamma=0)
 elo.full <- elo(mls, init=1500, gamma=0, kfac=30, history=FALSE, sort=FALSE)
 plot(elo.g.full$ratings[elo.full$ratings$Player] ~ elo.full$ratings$Rating)
 cor(elo.g.full$ratings[elo.full$ratings$Player], elo.full$ratings$Rating)
-# So are these — possible sources of error? 
-
-elo.g(mls.g, init=elo.g.full$ratings)$ratings
 
 ##### Cross validate k0 and lambda
-ls.lambda <- 0:100/20
-ls.k <- 0:80/2
+ls.lambda <- 0:31 * 0.16
+ls.k <- 0:31 * 1.3
 log.likelihood.hfa <- expand.grid(ls.k, ls.lambda)
 colnames(log.likelihood.hfa) <- c("k0", "lambda")
 log.likelihood.hfa$ll <- rep(-1e6, dim(log.likelihood.hfa)[1])
 kfac.init <- 30
 
-# Skeleton from hw5 that needs to be updated with our functions and data
 for (j in 1:dim(log.likelihood.hfa)[1]) {
   ratings.elo <- elo.g(mls.g[mls.g$year==2002,], init=1500, 
                        k0=kfac.init, 
@@ -223,9 +222,13 @@ for (j in 1:dim(log.likelihood.hfa)[1]) {
   log.likelihood.hfa[j, 'll'] = ll.tmp
 }
 
-best.ind = which(log.likelihood.hfa["ll"] == max(log.likelihood.hfa["ll"]))
+best.ind = which.max(log.likelihood.hfa$ll)
 best.k = log.likelihood.hfa[best.ind,]["k0"][[1]]
 best.lambda = log.likelihood.hfa[best.ind,]["lambda"][[1]]
+best.k = 3.9 # so you don't have to re-run cv
+best.lambda = 0.16 # so you don't have to re-run cv
+
+# Create heatmaps (using two different methods)
 
 acast(log.likelihood.hfa, k0~lambda, value.var="ll")
 m = as.matrix(acast(log.likelihood.hfa, k0~lambda, value.var="ll"))
@@ -236,16 +239,137 @@ axis(1, at=seq(0,1,length.out=ncol(m)),
 axis(2, at=seq(0,1,length.out=nrow(m)), 
      labels= paste("k", rownames(m)), las= 2)
 
+im.matrix <- matrix(log.likelihood.hfa$ll, nrow=length(ls.k), 
+                    ncol=length(ls.lambda), byrow=FALSE)
+image(x=unique(log.likelihood.hfa$k0), y=unique(log.likelihood.hfa$lambda),
+      z=im.matrix, col=hcl.colors(300, "Spectral", rev = TRUE), 
+      ylab=expression(lambda), xlab=expression(k[0]),
+      main="Elo with Goal Diff Heatmap")
+
+ll.hfa.truncated <- log.likelihood.hfa[log.likelihood.hfa$k0 < 10 & 
+                                         log.likelihood.hfa$lambda < 1, ]
+im.matrix <- matrix(ll.hfa.truncated$ll, nrow=length(ls.k[ls.k < 10]), 
+                    ncol=length(ls.lambda[ls.lambda < 1]), byrow=FALSE)
+image(x=unique(ll.hfa.truncated$k0), y=unique(ll.hfa.truncated$lambda),
+      z=im.matrix, col=hcl.colors(300, "Spectral", rev = TRUE), 
+      ylab=expression(lambda), xlab=expression(k[0]),
+      main="Elo with Goal Diff Parameter Heatmap")
+
 
 ratings.elo = elo.g(mls.g[mls.g$year==2002,], init=1500, k0=best.k, gamma=0)
-ratings.elo = elo.g(mls.g[mls.g$year>2002 & mls.g$year <= 2017,], status=ratings.elo$ratings, 
-                                        k0=best.k, 
-                                        lambda=best.lambda)
+ratings.elo = elo.g(mls.g[mls.g$year>2002 & mls.g$year <= 2017,], 
+                    status=ratings.elo$ratings, k0=best.k, lambda=best.lambda)
+
+##### Write the H&A four-step procedure
+
+### Step 1: Split time periods
+time.A <- 2002:2007
+time.B <- 2008:2013
+time.C <- 2014:2017
+
+### Step 2: Fit initial elo ratings over time period A 
+
+# First use k0 = 30, lambda = 0 
+ratings.elo.init <- elo.g(mls.g[mls.g$year == 2002,], init=1500, k0=30, lambda=0,
+                         gamma=0)
+
+# Then use optimal parameters to fit ratings
+ratings.elo.A <- elo.g(mls.g[mls.g$year %in% time.A & mls.g$year > 2002,],
+                       status=ratings.elo.init$ratings, k0=best.k, 
+                       lambda=best.lambda, gamma=0)
 
 
+### Step 3: Fit ordered logit model on time period B, continue to update elo
+###         ratings
 
+# Create df for this time period
+time.B.df <- mls.g[mls.g$year %in% time.B,]
 
+# Generate ratings for this time period
+ratings.elo.B <- elo.g(time.B.df ,
+                       status=ratings.elo.A$ratings, k0=best.k, 
+                       lambda=best.lambda, gamma=0)
 
+# Add ratings at the time to time period df
+time.B.df$home.rating <- -1e6
+time.B.df$away.rating <- -1e6
+for (i in 1:dim(time.B.df)[1]) {
+  time.B.df[i, 'home.rating'] <- 
+    ratings.elo.B$history[time.B.df[i, 'home'], 
+                          as.character(time.B.df[i, 'year'])]
+  time.B.df[i, 'away.rating'] <- 
+    ratings.elo.B$history[time.B.df[i, 'away'], 
+                          as.character(time.B.df[i, 'year'])]
+}
+
+# Set gamma, our HFA parameter
+gamma <- 0
+
+# Create rating.diff column 
+time.B.df$rating.diff <- time.B.df$home.rating + gamma - time.B.df$away.rating 
+
+# Fit ordered logit model
+result.fit <- polr(as.factor(result) ~ rating.diff, data=time.B.df)
+summary(result.fit)
+
+### Step 4: Predict match results for time period C, calculate loss
+
+# Create df for this time period
+time.C.df <- mls.g[mls.g$year %in% time.C,]
+
+# Generate ratings for this time period
+ratings.elo.C <- elo.g(time.C.df ,
+                       status=ratings.elo.B$ratings, k0=best.k, 
+                       lambda=best.lambda, gamma=0)
+
+# Add ratings at the time to time period df
+time.C.df$home.rating <- -1e6
+time.C.df$away.rating <- -1e6
+for (i in 1:dim(time.C.df)[1]) {
+  time.C.df[i, 'home.rating'] <- 
+    ratings.elo.C$history[time.C.df[i, 'home'], 
+                          as.character(time.C.df[i, 'year'])]
+  time.C.df[i, 'away.rating'] <- 
+    ratings.elo.C$history[time.C.df[i, 'away'], 
+                          as.character(time.C.df[i, 'year'])]
+}
+
+# Set gamma, our HFA parameter
+gamma <- 0
+
+# Create rating.diff column 
+time.C.df$rating.diff <- time.C.df$home.rating + gamma - time.C.df$away.rating 
+
+# Predict match results
+time.C.pred <- predict(result.fit, newdata=time.C.df)
+
+# Define function to get model's predicted probability for the true outcome
+# NOTE: THIS FUNCTION IS NOT FULLY FUNCTIONAL AND I THINK SOME OF THE FORMULAS 
+#       ARE WRONG
+pred.prob <- function(df, coef, zeta) {
+  mini.fn <- function(row) {
+    if (row['result'] <= 0 ) {
+      return((1 + exp(zeta[[1]] - row['rating.diff'] * coef[[1]]))**(-1))
+    } 
+    if (row['result'] <= 0.5) {
+      return((1 + exp(zeta[[2]] - row['rating.diff'] * coef[[1]]))**(-1))
+    }
+    return(1 - (1 + exp(zeta[[2]] - row['rating.diff'] * coef[[1]]))**(-1))
+  }
+  return(apply(df, 1, mini.fn))
+}
+pred.prob(time.C.df, result.fit$coefficients, result.fit$zeta)
+
+# Define loss functions
+quad.loss <- function(y, y.pred) {
+  return (mean((y - y.pred)**2))
+}
+info.loss <- function(y, coef, zeta) {
+   return( sum(-1 * log2(pred.prob(y, coef, zeta))) )
+}
+
+# Calculate loss
+quad.loss(time.C.df$result, as.double(time.C.pred) / 2 - 0.5)
 
 
 
