@@ -340,7 +340,7 @@ time.B.df.g <- mls.g[mls.g$year %in% time.B,]
 # Generate ratings for this time period
 ratings.elo.B <- elo(time.B.df, init=1500,
                          status=ratings.elo.A$ratings, kfac=best.k.base.elo)
-ratings.elo.g.B <- elo.g(time.B.df.g ,
+ratings.elo.g.B <- elo.g(time.B.df.g,
                        status=ratings.elo.g.A$ratings, k0=best.k, 
                        lambda=best.lambda, gamma=0)
 
@@ -398,9 +398,9 @@ time.C.df$home.rating <- -1e6
 time.C.df$away.rating <- -1e6
 for (i in 1:dim(time.C.df.g)[1]) {
   time.C.df[i, 'home.rating'] <- 
-    ratings.elo.B$ratings[which(ratings.elo.C$ratings$Player == time.C.df[i, 'home']),"Rating"]
+    ratings.elo.C$ratings[which(ratings.elo.C$ratings$Player == time.C.df[i, 'home']),"Rating"]
   time.C.df[i, 'away.rating'] <- 
-    ratings.elo.B$ratings[which(ratings.elo.C$ratings$Player == time.C.df[i, 'away']),"Rating"]
+    ratings.elo.C$ratings[which(ratings.elo.C$ratings$Player == time.C.df[i, 'away']),"Rating"]
 }
 
 time.C.df.g$home.rating <- -1e6
@@ -447,7 +447,8 @@ pred.prob <- function(df, coef, zeta) {
   return(apply(df, 1, mini.fn))
 }
 
-# MIGHT STILL BE A PROBLEM WITH NA VALUES
+# MIGHT STILL BE A PROBLEM WITH NA VALUES — SAM
+# I AM NOT HAVING THIS SAME PROBLEM — DANIEL 
 pred.prob(time.C.df, elo.base.result.fit$coefficients, elo.base.result.fit$zeta)
 pred.prob(time.C.df.g, elo.g.result.fit$coefficients, elo.g.result.fit$zeta)
 
@@ -460,7 +461,9 @@ info.loss <- function(df, coef, zeta) {
 }
 
 # Calculate loss
-quad.loss(time.C.df.g$result, as.double(time.C.pred) / 2 - 0.5)
+quad.loss(time.C.df$result, as.double(time.C.pred) / 2 - 0.5)
+quad.loss(time.C.df.g$result, as.double(time.C.g.pred) / 2 - 0.5)
+info.loss(time.C.df, elo.base.result.fit$coefficients, elo.base.result.fit$zeta)
 info.loss(time.C.df.g, elo.g.result.fit$coefficients, elo.g.result.fit$zeta)
 
 
