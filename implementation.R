@@ -228,6 +228,54 @@ best.lambda = log.likelihood.hfa[best.ind,]["lambda"][[1]]
 best.k = 3.9 # so you don't have to re-run cv
 best.lambda = 0.16 # so you don't have to re-run cv
 
+##### Cross validate for BASE ELO
+ls.k.base.elo <- 0:31 * 1.3
+log.likelihood.k <- rep(-1e6, length(ls.k.base.elo))
+kfac.init <- 30
+
+for (j in 1:length(ls.k.base.elo)) {
+  ratings.elo.base <- elo(mls[mls$year==2002,], init=1500, 
+                       kfac=kfac.init, 
+                       gamma=0)
+  ratings.elo.base <- elo(mls[mls$year>2002 & mls$year <= 2017,], 
+                       status=ratings.elo.base$ratings, 
+                       kfac=ls.k.base.elo[j])
+  # Validation on val set
+  ll.tmp = 0
+  for (val.year in 2018:2022){
+    pred <- predict(ratings.elo.base, mls[mls$year==val.year,], 
+                          gamma=0)
+    
+    # Account for games with teams that have no ratings yet
+    home_NA = (mls[mls$year  == val.year, "home"])[is.na(pred)]
+    away_NA = (mls[mls$year  == val.year, "away"])[is.na(pred)]
+    
+    replace_NA_rating <- function(x)
+      ifelse(x %in% unique(ratings.elo.base$ratings$Player), 
+             ratings.elo.base$ratings$Rating[which(ratings.elo.base$ratings$Player == x)], 1500)
+    
+    home_NA_ratings = sapply(home_NA, replace_NA_rating)
+    away_NA_ratings = sapply(away_NA, replace_NA_rating)
+    
+    pred[is.na(pred)] = We(home_NA_ratings, away_NA_ratings)
+    
+    ll.tmp <- ll.tmp +
+      sum(mls[mls$year==val.year,]$result * log(pred) +
+            (1 - mls[mls$year==val.year,]$result) * 
+            log(1-pred))
+    # Update model 
+    ratings.elo.base <- elo(mls[mls$year==val.year,], 
+                         init = 1500,
+                         kfac = ls.k.base.elo[j], 
+                         status = ratings.elo.base$ratings)
+  }
+  log.likelihood.k[j] = ll.tmp
+}
+
+best.ind = which.max(log.likelihood.k)
+best.k.base.elo = ls.k[best.ind]
+best.k.base.elo
+
 # Create heatmaps (using two different methods)
 
 acast(log.likelihood.hfa, k0~lambda, value.var="ll")
@@ -270,12 +318,15 @@ time.C <- 2014:2017
 ### Step 2: Fit initial elo ratings over time period A 
 
 # First use k0 = 30, lambda = 0 
-ratings.elo.init <- elo.g(mls.g[mls.g$year == 2002,], init=1500, k0=30, lambda=0,
+ratings.elo.init <- elo(mls[mls.g$year == 2002,], init=1500, kfac=30)
+ratings.elo.g.init <- elo.g(mls.g[mls.g$year == 2002,], init=1500, k0=30, lambda=0,
                          gamma=0)
 
 # Then use optimal parameters to fit ratings
-ratings.elo.A <- elo.g(mls.g[mls.g$year %in% time.A & mls.g$year > 2002,],
-                       status=ratings.elo.init$ratings, k0=best.k, 
+ratings.elo.A <- elo(mls[mls$year %in% time.A & mls$year > 2002,], init=1500, 
+                        status=ratings.elo.init$ratings, kfac=best.k.base.elo)
+ratings.elo.g.A <- elo.g(mls.g[mls.g$year %in% time.A & mls.g$year > 2002,],
+                       status=ratings.elo.g.init$ratings, k0=best.k, 
                        lambda=best.lambda, gamma=0)
 
 
@@ -283,65 +334,96 @@ ratings.elo.A <- elo.g(mls.g[mls.g$year %in% time.A & mls.g$year > 2002,],
 ###         ratings
 
 # Create df for this time period
-time.B.df <- mls.g[mls.g$year %in% time.B,]
+time.B.df <- mls[mls$year %in% time.B,]
+time.B.df.g <- mls.g[mls.g$year %in% time.B,]
 
 # Generate ratings for this time period
-ratings.elo.B <- elo.g(time.B.df ,
-                       status=ratings.elo.A$ratings, k0=best.k, 
+ratings.elo.B <- elo(time.B.df, init=1500,
+                         status=ratings.elo.A$ratings, kfac=best.k.base.elo)
+ratings.elo.g.B <- elo.g(time.B.df.g,
+                       status=ratings.elo.g.A$ratings, k0=best.k, 
                        lambda=best.lambda, gamma=0)
 
 # Add ratings at the time to time period df
 time.B.df$home.rating <- -1e6
 time.B.df$away.rating <- -1e6
-for (i in 1:dim(time.B.df)[1]) {
+for (i in 1:dim(time.B.df.g)[1]) {
   time.B.df[i, 'home.rating'] <- 
-    ratings.elo.B$history[time.B.df[i, 'home'], 
-                          as.character(time.B.df[i, 'year'])]
+    ratings.elo.B$ratings[which(ratings.elo.B$ratings$Player == time.B.df[i, 'home']),"Rating"]
   time.B.df[i, 'away.rating'] <- 
-    ratings.elo.B$history[time.B.df[i, 'away'], 
-                          as.character(time.B.df[i, 'year'])]
+    ratings.elo.B$ratings[which(ratings.elo.B$ratings$Player == time.B.df[i, 'away']),"Rating"]
+}
+
+time.B.df.g$home.rating <- -1e6
+time.B.df.g$away.rating <- -1e6
+for (i in 1:dim(time.B.df.g)[1]) {
+  time.B.df.g[i, 'home.rating'] <- 
+    ratings.elo.g.B$history[time.B.df.g[i, 'home'], 
+                          as.character(time.B.df.g[i, 'year'])]
+  time.B.df.g[i, 'away.rating'] <- 
+    ratings.elo.g.B$history[time.B.df.g[i, 'away'], 
+                          as.character(time.B.df.g[i, 'year'])]
 }
 
 # Set gamma, our HFA parameter
 gamma <- 0
 
 # Create rating.diff column 
-time.B.df$rating.diff <- time.B.df$home.rating + gamma - time.B.df$away.rating 
+time.B.df$rating.diff <- time.B.df$home.rating - time.B.df$away.rating 
+time.B.df.g$rating.diff <- time.B.df.g$home.rating + gamma - time.B.df.g$away.rating 
 
 # Fit ordered logit model
-result.fit <- polr(as.factor(result) ~ rating.diff, data=time.B.df)
-summary(result.fit)
+elo.base.result.fit <- polr(as.factor(result) ~ rating.diff, data=time.B.df)
+summary(elo.base.result.fit)
+
+elo.g.result.fit <- polr(as.factor(result) ~ rating.diff, data=time.B.df.g)
+summary(elo.g.result.fit)
 
 ### Step 4: Predict match results for time period C, calculate loss
 
 # Create df for this time period
-time.C.df <- mls.g[mls.g$year %in% time.C,]
+time.C.df <- mls[mls$year %in% time.C,]
+time.C.df.g <- mls.g[mls.g$year %in% time.C,]
 
 # Generate ratings for this time period
-ratings.elo.C <- elo.g(time.C.df ,
-                       status=ratings.elo.B$ratings, k0=best.k, 
+ratings.elo.C <- elo(time.C.df, init=1500,
+                         status=ratings.elo.B$ratings, kfac=best.k.base.elo)
+
+ratings.elo.g.C <- elo.g(time.C.df.g ,
+                       status=ratings.elo.g.B$ratings, k0=best.k, 
                        lambda=best.lambda, gamma=0)
 
 # Add ratings at the time to time period df
 time.C.df$home.rating <- -1e6
 time.C.df$away.rating <- -1e6
-for (i in 1:dim(time.C.df)[1]) {
+for (i in 1:dim(time.C.df.g)[1]) {
   time.C.df[i, 'home.rating'] <- 
-    ratings.elo.C$history[time.C.df[i, 'home'], 
-                          as.character(time.C.df[i, 'year'])]
+    ratings.elo.C$ratings[which(ratings.elo.C$ratings$Player == time.C.df[i, 'home']),"Rating"]
   time.C.df[i, 'away.rating'] <- 
-    ratings.elo.C$history[time.C.df[i, 'away'], 
-                          as.character(time.C.df[i, 'year'])]
+    ratings.elo.C$ratings[which(ratings.elo.C$ratings$Player == time.C.df[i, 'away']),"Rating"]
+}
+
+time.C.df.g$home.rating <- -1e6
+time.C.df.g$away.rating <- -1e6
+for (i in 1:dim(time.C.df.g)[1]) {
+  time.C.df.g[i, 'home.rating'] <- 
+    ratings.elo.g.C$history[time.C.df.g[i, 'home'], 
+                          as.character(time.C.df.g[i, 'year'])]
+  time.C.df.g[i, 'away.rating'] <- 
+    ratings.elo.g.C$history[time.C.df.g[i, 'away'], 
+                          as.character(time.C.df.g[i, 'year'])]
 }
 
 # Set gamma, our HFA parameter
 gamma <- 0
 
 # Create rating.diff column 
-time.C.df$rating.diff <- time.C.df$home.rating + gamma - time.C.df$away.rating 
+time.C.df$rating.diff <- time.C.df$home.rating - time.C.df$away.rating 
+time.C.df.g$rating.diff <- time.C.df.g$home.rating + gamma - time.C.df.g$away.rating 
 
 # Predict match results
-time.C.pred <- predict(result.fit, newdata=time.C.df)
+time.C.pred <- predict(elo.base.result.fit, newdata=time.C.df)
+time.C.g.pred <- predict(elo.g.result.fit, newdata=time.C.df.g)
 
 # Define function to get model's predicted probability for the true outcome
 pred.prob <- function(df, coef, zeta) {
@@ -364,7 +446,11 @@ pred.prob <- function(df, coef, zeta) {
   }
   return(apply(df, 1, mini.fn))
 }
-pred.prob(time.C.df, result.fit$coefficients, result.fit$zeta)
+
+# MIGHT STILL BE A PROBLEM WITH NA VALUES — SAM
+# I AM NOT HAVING THIS SAME PROBLEM — DANIEL 
+pred.prob(time.C.df, elo.base.result.fit$coefficients, elo.base.result.fit$zeta)
+pred.prob(time.C.df.g, elo.g.result.fit$coefficients, elo.g.result.fit$zeta)
 
 # Define loss functions
 quad.loss <- function(y, y.pred) {
@@ -376,23 +462,25 @@ info.loss <- function(df, coef, zeta) {
 
 # Calculate loss
 quad.loss(time.C.df$result, as.double(time.C.pred) / 2 - 0.5)
-info.loss(time.C.df, result.fit$coefficients, result.fit$zeta)
+quad.loss(time.C.df.g$result, as.double(time.C.g.pred) / 2 - 0.5)
+info.loss(time.C.df, elo.base.result.fit$coefficients, elo.base.result.fit$zeta)
+info.loss(time.C.df.g, elo.g.result.fit$coefficients, elo.g.result.fit$zeta)
 
 
 ##### Recreate Fig. 3 for our ordered logit model
 dummy.diff <- -400:400
 dummy.loss.df <- data.frame('result'=as.factor(rep(0, length(dummy.diff))), 
                             'rating.diff'=dummy.diff)
-dummy.loss.df$prob <- pred.prob(dummy.loss.df, result.fit$coefficients, 
-                                result.fit$zeta)
+dummy.loss.df$prob <- pred.prob(dummy.loss.df, elo.g.result.fit$coefficients, 
+                                elo.g.result.fit$zeta)
 dummy.draw.df <- data.frame('result'=as.factor(rep(0.5, length(dummy.diff))), 
                             'rating.diff'=dummy.diff)
-dummy.draw.df$prob <- pred.prob(dummy.draw.df, result.fit$coefficients, 
-                                result.fit$zeta)
+dummy.draw.df$prob <- pred.prob(dummy.draw.df, elo.g.result.fit$coefficients, 
+                                elo.g.result.fit$zeta)
 dummy.win.df <- data.frame('result'=as.factor(rep(1, length(dummy.diff))), 
                            'rating.diff'=dummy.diff)
-dummy.win.df$prob <- pred.prob(dummy.win.df, result.fit$coefficients, 
-                               result.fit$zeta)
+dummy.win.df$prob <- pred.prob(dummy.win.df, elo.g.result.fit$coefficients, 
+                               elo.g.result.fit$zeta)
 
 # png('pred-prob_vs_rating-diff.png', width=600, height=500)
 plot(dummy.loss.df$prob ~ dummy.loss.df$rating.diff, col='red', type='l', 
@@ -413,9 +501,9 @@ range <- ((approx.effect-5)*100):((approx.effect+5)*100) / 100
 prob.diffs <- rep(-1e6, length(range))
 for (i in 1:length(range)) {
   df.l <- data.frame('rating.diff'=range[i], 'result'=0)
-  df.l$p <- pred.prob(df.l, result.fit$coefficients, result.fit$zeta)
+  df.l$p <- pred.prob(df.l, elo.g.result.fit$coefficients, elo.g.result.fit$zeta)
   df.w <- data.frame('rating.diff'=range[i], 'result'=1)
-  df.w$p <- pred.prob(df.w, result.fit$coefficients, result.fit$zeta)
+  df.w$p <- pred.prob(df.w, elo.g.result.fit$coefficients, elo.g.result.fit$zeta)
   
   prob.diffs[i] <- abs(df.l$p - df.w$p)
 }
