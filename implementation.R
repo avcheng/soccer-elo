@@ -311,9 +311,9 @@ ratings.elo = elo.g(mls.g[mls.g$year>2002 & mls.g$year <= 2017,],
 ##### Write the H&A four-step procedure
 
 ### Step 1: Split time periods
-time.A <- 2002:2007
-time.B <- 2008:2013
-time.C <- 2014:2017
+time.A <- 2001:2005
+time.B <- 2006:2010
+time.C <- 2011:2015
 
 ### Step 2: Fit initial elo ratings over time period A 
 
@@ -338,20 +338,35 @@ time.B.df <- mls[mls$year %in% time.B,]
 time.B.df.g <- mls.g[mls.g$year %in% time.B,]
 
 # Generate ratings for this time period
-ratings.elo.B <- elo(time.B.df, init=1500,
-                         status=ratings.elo.A$ratings, kfac=best.k.base.elo)
+ratings.elo.B <- elo(time.B.df, init=1500, status=ratings.elo.A$ratings, 
+                     kfac=best.k.base.elo, history=TRUE)
 ratings.elo.g.B <- elo.g(time.B.df.g,
                        status=ratings.elo.g.A$ratings, k0=best.k, 
                        lambda=best.lambda, gamma=0)
 
+# To compare ratings from each system to help diagnose why ELO.b model 
+# only predicts a home win for every match
+comp.B.ratings <- data.frame('Team'=ratings.elo.B$ratings$Player, 
+                             'ELO.b'=ratings.elo.B$ratings$Rating)
+comp.B.ratings$ELO.g <- -1e6
+for (i in 1:dim(comp.B.ratings)[1]) {
+  comp.B.ratings[i, 'ELO.g'] <- 
+    ratings.elo.g.B$ratings[comp.B.ratings[i, 'Team']]
+}
+
 # Add ratings at the time to time period df
+ratings.elo.B.history <- ratings.elo.B$history[,,'Rating']
+colnames(ratings.elo.B.history) <- time.B
+
 time.B.df$home.rating <- -1e6
 time.B.df$away.rating <- -1e6
-for (i in 1:dim(time.B.df.g)[1]) {
+for (i in 1:dim(time.B.df)[1]) {
   time.B.df[i, 'home.rating'] <- 
-    ratings.elo.B$ratings[which(ratings.elo.B$ratings$Player == time.B.df[i, 'home']),"Rating"]
+    ratings.elo.B.history[time.B.df[i, 'home'], 
+                          as.character(time.B.df[i, 'year'])]
   time.B.df[i, 'away.rating'] <- 
-    ratings.elo.B$ratings[which(ratings.elo.B$ratings$Player == time.B.df[i, 'away']),"Rating"]
+    ratings.elo.B.history[time.B.df[i, 'away'], 
+                          as.character(time.B.df[i, 'year'])]
 }
 
 time.B.df.g$home.rating <- -1e6
@@ -369,7 +384,7 @@ for (i in 1:dim(time.B.df.g)[1]) {
 gamma <- 0
 
 # Create rating.diff column 
-time.B.df$rating.diff <- time.B.df$home.rating - time.B.df$away.rating 
+time.B.df$rating.diff <- time.B.df$home.rating + gamma - time.B.df$away.rating 
 time.B.df.g$rating.diff <- time.B.df.g$home.rating + gamma - time.B.df.g$away.rating 
 
 # Fit ordered logit model
@@ -386,21 +401,26 @@ time.C.df <- mls[mls$year %in% time.C,]
 time.C.df.g <- mls.g[mls.g$year %in% time.C,]
 
 # Generate ratings for this time period
-ratings.elo.C <- elo(time.C.df, init=1500,
-                         status=ratings.elo.B$ratings, kfac=best.k.base.elo)
+ratings.elo.C <- elo(time.C.df, init=1500, status=ratings.elo.B$ratings, 
+                     kfac=best.k.base.elo, history=TRUE)
 
 ratings.elo.g.C <- elo.g(time.C.df.g ,
                        status=ratings.elo.g.B$ratings, k0=best.k, 
                        lambda=best.lambda, gamma=0)
 
 # Add ratings at the time to time period df
+ratings.elo.C.history <- ratings.elo.C$history[,,'Rating']
+colnames(ratings.elo.C.history) <- time.C
+
 time.C.df$home.rating <- -1e6
 time.C.df$away.rating <- -1e6
-for (i in 1:dim(time.C.df.g)[1]) {
+for (i in 1:dim(time.C.df)[1]) {
   time.C.df[i, 'home.rating'] <- 
-    ratings.elo.C$ratings[which(ratings.elo.C$ratings$Player == time.C.df[i, 'home']),"Rating"]
+    ratings.elo.C.history[time.C.df[i, 'home'], 
+                          as.character(time.C.df[i, 'year'])]
   time.C.df[i, 'away.rating'] <- 
-    ratings.elo.C$ratings[which(ratings.elo.C$ratings$Player == time.C.df[i, 'away']),"Rating"]
+    ratings.elo.C.history[time.C.df[i, 'away'], 
+                          as.character(time.C.df[i, 'year'])]
 }
 
 time.C.df.g$home.rating <- -1e6
@@ -424,6 +444,84 @@ time.C.df.g$rating.diff <- time.C.df.g$home.rating + gamma - time.C.df.g$away.ra
 # Predict match results
 time.C.pred <- predict(elo.base.result.fit, newdata=time.C.df)
 time.C.g.pred <- predict(elo.g.result.fit, newdata=time.C.df.g)
+
+# Predict match results for AVG and MAX methods
+odds <- read.csv('data/mls_closing_odds.csv')
+
+odds$year <- format(as.Date(odds$match_date), "%Y")
+
+odds[odds$home_team == 'Houston Dynamo', 'home_team'] <- "Houston Dynamo FC"
+odds[odds$home_team == 'Columbus Crew', 'home_team'] <- "Columbus Crew SC"
+odds[odds$home_team == 'DC United', 'home_team'] <- "D.C. United"
+odds[odds$home_team == 'Los Angeles Galaxy', 'home_team'] <- "LA Galaxy"
+odds[odds$home_team == 'New England Revoluti', 'home_team'] <- 
+  "New England Revolution"
+odds[odds$home_team == 'Chicago Fire', 'home_team'] <- "Chicago Fire FC"
+odds[odds$home_team == 'Seattle Sounders', 'home_team'] <- "Seattle Sounders FC"
+odds[odds$home_team == 'Montreal Impact', 'home_team'] <- "CF Montréal"
+odds[odds$home_team == 'Orlando City', 'home_team'] <- "Orlando City SC"
+odds[odds$home_team == 'New York City', 'home_team'] <- "New York City FC"
+
+odds[odds$away_team == 'Houston Dynamo', 'away_team'] <- "Houston Dynamo FC"
+odds[odds$away_team == 'Columbus Crew', 'away_team'] <- "Columbus Crew SC"
+odds[odds$away_team == 'DC United', 'away_team'] <- "D.C. United"
+odds[odds$away_team == 'Los Angeles Galaxy', 'away_team'] <- "LA Galaxy"
+odds[odds$away_team == 'New England Revoluti', 'away_team'] <- 
+  "New England Revolution"
+odds[odds$away_team == 'Chicago Fire', 'away_team'] <- "Chicago Fire FC"
+odds[odds$away_team == 'Seattle Sounders', 'away_team'] <- "Seattle Sounders FC"
+odds[odds$away_team == 'Montreal Impact', 'away_team'] <- "CF Montréal"
+odds[odds$away_team == 'Orlando City', 'away_team'] <- "Orlando City SC"
+odds[odds$away_team == 'New York City', 'away_team'] <- "New York City FC"
+
+
+betting.odds.pred <- data.frame('avg.pred'=rep(-1e6, length(time.C.g.pred)),
+                                'avg.prob'=rep(-1e6, length(time.C.g.pred)),
+                                'max.pred'=rep(-1e6, length(time.C.g.pred)),
+                                'max.prob'=rep(-1e6, length(time.C.g.pred)))
+for (i in 1:dim(time.C.df.g)[1]) {
+  if (dim(odds[format(as.Date(odds$match_date), "%Y-%m") == 
+               format(as.Date(time.C.df.g[i, 'date']), "%Y-%m") & 
+                  odds$home_team == time.C.df.g[i, 'home'] &
+                  odds$away_team == time.C.df.g[i, 'away'],])[1] < 1) {
+    betting.odds.pred[i,] <- rep(NA, 4)
+  } else {
+    ind <- which(format(as.Date(odds$match_date), "%Y-%m") == 
+                   format(as.Date(time.C.df.g[i, 'date']), "%Y-%m") & 
+                   odds$home_team == time.C.df.g[i, 'home'] &
+                   odds$away_team == time.C.df.g[i, 'away'])
+    if (length(ind) > 1) {
+      ind <- ind[which.min(abs(as.Date(odds[ind, 'match_date']) - 
+                            as.Date(time.C.df.g[i, 'date'])))]
+    }
+    avg.odds <- c(odds[ind,'avg_odds_away_win'],
+                  odds[ind, 'avg_odds_draw'],
+                  odds[ind,'avg_odds_home_win'])
+    betting.odds.pred[i, 'avg.pred'] <- which.min(avg.odds) / 2 - 0.5
+    avg.probs <- avg.odds**(-1)
+    avg.probs <- avg.probs * (1 / sum(avg.probs))
+    betting.odds.pred[i, 'avg.prob'] <- 
+      avg.probs[(time.C.df.g[i, 'result'] + 0.5) * 2]
+    
+    max.odds <- 
+      c(odds[ind,'max_odds_away_win'],
+        odds[ind,'max_odds_draw'],
+        odds[ind,'max_odds_home_win'])
+    betting.odds.pred[i, 'max.pred'] <- which.min(max.odds) / 2 - 0.5
+    max.probs <- max.odds**(-1)
+    max.probs <- max.probs * (1 / sum(max.probs))
+    betting.odds.pred[i, 'max.prob'] <- 
+      max.probs[(time.C.df.g[i, 'result'] + 0.5) * 2]
+  }
+}
+
+betting.odds.pred <- na.omit(betting.odds.pred)
+
+# Verify the results of the betting odds strategies in different ways
+check.predictions <- cbind(betting.odds.pred[,c('avg.pred','max.pred')], 
+                        time.C.g.pred[as.integer(rownames(betting.odds.pred))])
+dim(check.predictions[check.predictions[,1] != check.predictions[,3],])
+dim(check.predictions[check.predictions[,1] == 0 & check.predictions[,3] == 0,])
 
 # Define function to get model's predicted probability for the true outcome
 pred.prob <- function(df, coef, zeta) {
@@ -461,14 +559,37 @@ info.loss <- function(df, coef, zeta) {
 }
 
 # Calculate loss
-quad.loss(time.C.df$result, as.double(time.C.pred) / 2 - 0.5)
-quad.loss(time.C.df.g$result, as.double(time.C.g.pred) / 2 - 0.5)
-info.loss(time.C.df, elo.base.result.fit$coefficients, elo.base.result.fit$zeta)
-info.loss(time.C.df.g, elo.g.result.fit$coefficients, elo.g.result.fit$zeta)
+loss.df <- data.frame('method'=c('ELO.b', 'ELO.g', 'AVG', 'MAX'),
+                      'quad.loss'= 
+                        c(quad.loss(time.C.df$result, as.double(time.C.pred) / 2 - 0.5),
+                          quad.loss(time.C.df.g$result, as.double(time.C.g.pred) / 2 - 0.5),
+                          quad.loss(time.C.df$result[as.integer(rownames(betting.odds.pred))], 
+                                    betting.odds.pred$avg.pred),
+                          quad.loss(time.C.df$result[as.integer(rownames(betting.odds.pred))], 
+                                    betting.odds.pred$max.pred)),
+                      'info.loss'=
+                        c(info.loss(time.C.df, elo.base.result.fit$coefficients, elo.base.result.fit$zeta),
+                          info.loss(time.C.df.g, elo.g.result.fit$coefficients, elo.g.result.fit$zeta),
+                          mean(-1 * log2(betting.odds.pred$avg.prob)),
+                          mean(-1 * log2(betting.odds.pred$max.prob))))
+indx <- as.integer(rownames(betting.odds.pred))
+loss.df.2 <- data.frame('method'=c('ELO.b', 'ELO.g', 'AVG', 'MAX'),
+                      'quad.loss'= 
+                        c(quad.loss(time.C.df$result[indx], as.double(time.C.pred[indx]) / 2 - 0.5),
+                          quad.loss(time.C.df.g$result[indx], as.double(time.C.g.pred[indx]) / 2 - 0.5),
+                          quad.loss(time.C.df$result[as.integer(rownames(betting.odds.pred))], 
+                                    betting.odds.pred$avg.pred),
+                          quad.loss(time.C.df$result[as.integer(rownames(betting.odds.pred))], 
+                                    betting.odds.pred$max.pred)),
+                      'info.loss'=
+                        c(info.loss(time.C.df[indx,], elo.base.result.fit$coefficients, elo.base.result.fit$zeta),
+                          info.loss(time.C.df.g[indx,], elo.g.result.fit$coefficients, elo.g.result.fit$zeta),
+                          mean(-1 * log2(betting.odds.pred$avg.prob)),
+                          mean(-1 * log2(betting.odds.pred$max.prob))))
 
 
-##### Recreate Fig. 3 for our ordered logit model
-dummy.diff <- -400:400
+##### Recreate Fig. 3 for our ordered logit model with goal difference
+dummy.diff <- -600:600
 dummy.loss.df <- data.frame('result'=as.factor(rep(0, length(dummy.diff))), 
                             'rating.diff'=dummy.diff)
 dummy.loss.df$prob <- pred.prob(dummy.loss.df, elo.g.result.fit$coefficients, 
@@ -507,9 +628,49 @@ for (i in 1:length(range)) {
   
   prob.diffs[i] <- abs(df.l$p - df.w$p)
 }
+hfa.est.g <- range[which.min(prob.diffs)]
+
+##### Recreate Fig. 3 for our ordered logit model with base elo
+dummy.diff <- -600:600
+dummy.loss.df <- data.frame('result'=as.factor(rep(0, length(dummy.diff))), 
+                            'rating.diff'=dummy.diff)
+dummy.loss.df$prob <- pred.prob(dummy.loss.df, elo.base.result.fit$coefficients, 
+                                elo.base.result.fit$zeta)
+dummy.draw.df <- data.frame('result'=as.factor(rep(0.5, length(dummy.diff))), 
+                            'rating.diff'=dummy.diff)
+dummy.draw.df$prob <- pred.prob(dummy.draw.df, elo.base.result.fit$coefficients, 
+                                elo.base.result.fit$zeta)
+dummy.win.df <- data.frame('result'=as.factor(rep(1, length(dummy.diff))), 
+                           'rating.diff'=dummy.diff)
+dummy.win.df$prob <- pred.prob(dummy.win.df, elo.base.result.fit$coefficients, 
+                               elo.base.result.fit$zeta)
+
+# png('pred-prob_vs_rating-diff.png', width=600, height=500)
+plot(dummy.loss.df$prob ~ dummy.loss.df$rating.diff, col='red', type='l', 
+     main="Ordered Logit Predicted Probabilities vs. Rating Difference", 
+     ylab="Predicted Probability",
+     xlab="Rating Difference")
+lines(dummy.draw.df$prob ~ dummy.draw.df$rating.diff, col='purple')
+lines(dummy.win.df$prob ~ dummy.win.df$rating.diff, col='blue')
+legend(200,0.5, c('Home Loss', 'Draw', 'Home Win'), 
+       col=c('red', 'purple', 'blue'), lty=1)
+# dev.off()
+
+##### Find our estimated 'HFA' effect as H&A did
+approx.effect <- dummy.loss.df[which.min(abs(dummy.loss.df$prob - 
+                                               dummy.win.df$prob)), 
+                               'rating.diff']
+range <- ((approx.effect-5)*100):((approx.effect+5)*100) / 100
+prob.diffs <- rep(-1e6, length(range))
+for (i in 1:length(range)) {
+  df.l <- data.frame('rating.diff'=range[i], 'result'=0)
+  df.l$p <- pred.prob(df.l, elo.g.result.fit$coefficients, elo.g.result.fit$zeta)
+  df.w <- data.frame('rating.diff'=range[i], 'result'=1)
+  df.w$p <- pred.prob(df.w, elo.g.result.fit$coefficients, elo.g.result.fit$zeta)
+  
+  prob.diffs[i] <- abs(df.l$p - df.w$p)
+}
 hfa.est <- range[which.min(prob.diffs)]
-
-
 
 
 
