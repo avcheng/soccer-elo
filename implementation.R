@@ -285,8 +285,8 @@ predict.fn.glicko <- function(t1, t2, ratings, gamma = 0){
   return (E)
 }
 
-ls.omega = (0:30)*2
-ls.hfa = 0:100
+ls.omega = (0:1000) * 2 
+ls.hfa = 0
 log.likelihood.glicko = matrix(0, nrow = length(ls.omega), ncol = length(ls.hfa))
 
 for (j in 1:length(ls.omega)){
@@ -326,8 +326,8 @@ image(x=ls.omega, y=ls.hfa,
 best.ind = which(log.likelihood.glicko == max(log.likelihood.glicko), arr.ind = TRUE)
 best.omega = ls.omega[best.ind[[1]]]
 best.hfa = ls.hfa[best.ind[[2]]]
-best.omega = 60
-best.hfa = 100
+# best.omega = 60
+# best.hfa = 100
 ratings.glicko = glicko(mls[mls$year>2002 & mls$year <= 2017,], 
                         status=ratings.glicko$ratings, cval=best.omega, gamma=best.hfa)
 
@@ -516,7 +516,7 @@ time.C.g.pred <- predict(elo.g.result.fit, newdata=time.C.df.g)
 time.C.glicko.pred <- predict(glicko.base.result.fit, newdata=time.C.df)
 
 # Predict match results for AVG and MAX methods
-odds <- read.csv('soccer-elo/data/mls_closing_odds.csv')
+odds <- read.csv('data/mls_closing_odds.csv')
 
 odds$year <- format(as.Date(odds$match_date), "%Y")
 
@@ -843,8 +843,8 @@ loss.df.2 <- data.frame('method'=c('ELO.b', 'ELO.g', 'GLICKO', 'AVG', 'MAX', 'UN
                                        avg.probs.temp),
                           quad.loss.sd(time.C.df[indx,'result'], 
                                        max.probs.temp),
-                          quad.loss.sd(time.C.df$result, unif.probs.temp)),
-                          quad.loss.sd(time.C.df$result[indx], frequency.probs[indx,]),
+                          quad.loss.sd(time.C.df$result, unif.probs.temp),
+                          quad.loss.sd(time.C.df$result[indx], frequency.probs[indx,])),
                       'info.loss'=
                         c(info.loss(time.C.df[indx,], elo.base.result.fit$coefficients, elo.base.result.fit$zeta),
                           info.loss(time.C.df.g[indx,], elo.g.result.fit$coefficients, elo.g.result.fit$zeta),
@@ -852,7 +852,7 @@ loss.df.2 <- data.frame('method'=c('ELO.b', 'ELO.g', 'GLICKO', 'AVG', 'MAX', 'UN
                           mean(-1 * log2(betting.odds.pred$avg.prob)),
                           mean(-1 * log2(betting.odds.pred$max.prob)),
                           -1 * log2(1/3),
-                          mean(-1 * log2(pred.freq.prob(time.C.df))),
+                          mean(-1 * log2(pred.freq.prob(time.C.df)))),
                       'info.loss.sd'=
                         c(info.loss.sd(time.C.df[indx,], elo.base.result.fit$coefficients, elo.base.result.fit$zeta),
                           info.loss.sd(time.C.df.g[indx,], elo.g.result.fit$coefficients, elo.g.result.fit$zeta),
@@ -860,7 +860,7 @@ loss.df.2 <- data.frame('method'=c('ELO.b', 'ELO.g', 'GLICKO', 'AVG', 'MAX', 'UN
                           sd(-1 * log2(betting.odds.pred$avg.prob)),
                           sd(-1 * log2(betting.odds.pred$max.prob)),
                           0,
-                          mean(-1 * log2(pred.freq.prob(time.C.df))))))
+                          mean(-1 * log2(pred.freq.prob(time.C.df)))))
 
 ##### Recreate Fig. 3 for our ordered logit model with goal difference
 dummy.diff <- -600:600
