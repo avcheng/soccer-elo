@@ -173,10 +173,11 @@ predict.elo.g <- function(ratings, df, gamma=0) {
   return (apply(df, 1, row.We))
 }
 
-##### Compare our function to elo in PlayerRatings package
+##### Compare our function to elo & glicko in PlayerRatings package
 mls.mini <- mls[1:50,]
 mls.g.mini <- mls.g[1:50,]
 elo.mini <- elo(mls.mini, init=1500, gamma=0, kfac=30)
+glicko.mini <- glicko(mls.mini, init = c(1500, 300), rdmax=15000, history = FALSE, sort=FALSE)
 elo.g.mini <- elo.g(mls.g.mini)
 
 ##### Check correspondence between ratings from PlayerRatings package 
@@ -186,7 +187,7 @@ elo.full <- elo(mls, init=1500, gamma=0, kfac=30, history=FALSE, sort=FALSE)
 plot(elo.g.full$ratings[elo.full$ratings$Player] ~ elo.full$ratings$Rating)
 cor(elo.g.full$ratings[elo.full$ratings$Player], elo.full$ratings$Rating)
 
-##### Cross validate k0 and lambda
+##### Cross validate k0 and lambda for goal difference elo model
 ls.lambda <- 0:31 * 0.16
 ls.k <- 0:31 * 1.3
 log.likelihood.hfa <- expand.grid(ls.k, ls.lambda)
@@ -303,6 +304,7 @@ for (j in 1:length(ls.omega)){
                                           row.names = ratings.glicko$ratings[,1]),
                                gamma = ls.hfa[i])
       
+
       # Log-likelihood
       ll.tmp <- 
         ll.tmp+sum(log(pred^mls[mls$year==val.year,]$result*
@@ -422,6 +424,18 @@ for (i in 1:dim(time.B.df)[1]) {
                              as.character(time.B.df[i, 'year'])]
 }
 
+
+time.B.df$glicko.home.rating <- -1e6
+time.B.df$glicko.away.rating <- -1e6
+for (i in 1:dim(time.B.df)[1]) {
+  time.B.df[i, 'glicko.home.rating'] <- 
+    ratings.glicko.B.history[time.B.df[i, 'home'], 
+                          as.character(time.B.df[i, 'year'])]
+  time.B.df[i, 'glicko.away.rating'] <- 
+    ratings.glicko.B.history[time.B.df[i, 'away'], 
+                          as.character(time.B.df[i, 'year'])]
+}
+
 # Set gamma, our HFA parameter
 gamma <- 0
 
@@ -458,6 +472,11 @@ ratings.elo.g.C <- elo.g(time.C.df.g ,
 ratings.glicko.C <- glicko(time.C.df,
                            status=ratings.glicko.B$ratings, cval=best.omega, 
                            gamma=best.hfa, history = TRUE)
+
+
+ratings.glicko.C <- glicko(time.C.df,
+                         status=ratings.glicko.B$ratings, cval=best.omega, 
+                         gamma=best.hfa, history = TRUE)
 
 
 # Add ratings at the time to time period df
@@ -500,6 +519,18 @@ for (i in 1:dim(time.C.df)[1]) {
   time.C.df[i, 'glicko.away.rating'] <- 
     ratings.glicko.C.history[time.C.df[i, 'away'], 
                              as.character(time.C.df[i, 'year'])]
+}
+
+
+time.C.df$glicko.home.rating <- -1e6
+time.C.df$glicko.away.rating <- -1e6
+for (i in 1:dim(time.C.df)[1]) {
+  time.C.df[i, 'glicko.home.rating'] <- 
+    ratings.glicko.C.history[time.C.df[i, 'home'], 
+                          as.character(time.C.df[i, 'year'])]
+  time.C.df[i, 'glicko.away.rating'] <- 
+    ratings.glicko.C.history[time.C.df[i, 'away'], 
+                          as.character(time.C.df[i, 'year'])]
 }
 
 # Set gamma, our HFA parameter
@@ -856,6 +887,7 @@ loss.df.2 <- data.frame('method'=c('ELO.b', 'ELO.g', 'GLICKO', 'AVG', 'MAX', 'UN
                         c(info.loss(time.C.df[indx,], elo.base.result.fit$coefficients, elo.base.result.fit$zeta),
                           info.loss(time.C.df.g[indx,], elo.g.result.fit$coefficients, elo.g.result.fit$zeta),
                           info.loss(time.C.df[indx,], glicko.base.result.fit$coefficients, glicko.base.result.fit$zeta, column = "glicko.rating.diff"),
+
                           mean(-1 * log2(betting.odds.pred$avg.prob)),
                           mean(-1 * log2(betting.odds.pred$max.prob)),
                           -1 * log2(1/3),
@@ -867,11 +899,7 @@ loss.df.2 <- data.frame('method'=c('ELO.b', 'ELO.g', 'GLICKO', 'AVG', 'MAX', 'UN
                           sd(-1 * log2(betting.odds.pred$avg.prob)),
                           sd(-1 * log2(betting.odds.pred$max.prob)),
                           0,
-<<<<<<< Updated upstream
-                          mean(-1 * log2(pred.freq.prob(time.C.df)))))
-=======
                           sd(-1 * log2(pred.freq.prob(time.C.df)))))
->>>>>>> Stashed changes
 
 ##### Recreate Fig. 3 for our ordered logit model with goal difference
 dummy.diff <- -600:600
@@ -956,8 +984,5 @@ for (i in 1:length(range)) {
   prob.diffs[i] <- abs(df.l$p - df.w$p)
 }
 hfa.est <- range[which.min(prob.diffs)]
-
-
-
 
 
