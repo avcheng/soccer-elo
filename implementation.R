@@ -644,12 +644,26 @@ loss.df <- data.frame('method'=c('ELO.b', 'ELO.g', 'AVG', 'MAX', 'UNIF'),
                           quad.loss(time.C.df[indx,'result'], 
                                     max.probs.temp),
                           quad.loss(time.C.df$result, unif.probs.temp)),
+                      'quad.loss.sd'= 
+                        c(quad.loss.sd(time.C.df$result, elo.b.probs),
+                          quad.loss.sd(time.C.df.g$result, elo.g.probs),
+                          quad.loss.sd(time.C.df[indx, 'result'], 
+                                    avg.probs.temp),
+                          quad.loss.sd(time.C.df[indx,'result'], 
+                                    max.probs.temp),
+                          quad.loss.sd(time.C.df$result, unif.probs.temp)),
                       'info.loss'=
                         c(info.loss(time.C.df, elo.base.result.fit$coefficients, elo.base.result.fit$zeta),
                           info.loss(time.C.df.g, elo.g.result.fit$coefficients, elo.g.result.fit$zeta),
                           mean(-1 * log2(betting.odds.pred$avg.prob)),
                           mean(-1 * log2(betting.odds.pred$max.prob)),
-                          -1 * log2(1/3)))
+                          -1 * log2(1/3)),
+                      'info.loss.sd'=
+                        c(info.loss.sd(time.C.df, elo.base.result.fit$coefficients, elo.base.result.fit$zeta),
+                          info.loss.sd(time.C.df.g, elo.g.result.fit$coefficients, elo.g.result.fit$zeta),
+                          sd(-1 * log2(betting.odds.pred$avg.prob)),
+                          sd(-1 * log2(betting.odds.pred$max.prob)),
+                          0))
 loss.df.2 <- data.frame('method'=c('ELO.b', 'ELO.g', 'AVG', 'MAX', 'UNIF'),
                       'quad.loss'= 
                         c(quad.loss(time.C.df$result[indx], elo.b.probs[indx,]),
@@ -659,12 +673,26 @@ loss.df.2 <- data.frame('method'=c('ELO.b', 'ELO.g', 'AVG', 'MAX', 'UNIF'),
                           quad.loss(time.C.df[indx,'result'], 
                                     max.probs.temp),
                           quad.loss(time.C.df$result[indx], unif.probs.temp[indx,])),
+                      'quad.loss.sd'= 
+                        c(quad.loss.sd(time.C.df$result[indx], elo.b.probs[indx,]),
+                          quad.loss.sd(time.C.df.g$result[indx], elo.g.probs[indx,]),
+                          quad.loss.sd(time.C.df[indx, 'result'], 
+                                       avg.probs.temp),
+                          quad.loss.sd(time.C.df[indx,'result'], 
+                                       max.probs.temp),
+                          quad.loss.sd(time.C.df$result, unif.probs.temp)),
                       'info.loss'=
                         c(info.loss(time.C.df[indx,], elo.base.result.fit$coefficients, elo.base.result.fit$zeta),
                           info.loss(time.C.df.g[indx,], elo.g.result.fit$coefficients, elo.g.result.fit$zeta),
                           mean(-1 * log2(betting.odds.pred$avg.prob)),
                           mean(-1 * log2(betting.odds.pred$max.prob)),
-                          -1 * log2(1/3)))
+                          -1 * log2(1/3)),
+                      'info.loss.sd'=
+                        c(info.loss.sd(time.C.df[indx,], elo.base.result.fit$coefficients, elo.base.result.fit$zeta),
+                          info.loss.sd(time.C.df.g[indx,], elo.g.result.fit$coefficients, elo.g.result.fit$zeta),
+                          sd(-1 * log2(betting.odds.pred$avg.prob)),
+                          sd(-1 * log2(betting.odds.pred$max.prob)),
+                          0))
 
 ##### Recreate Fig. 3 for our ordered logit model with goal difference
 dummy.diff <- -600:600
