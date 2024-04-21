@@ -3,7 +3,7 @@ library(reshape2)
 library(MASS) # required for ordinal logistic regression
 
 ##### Data Wrangling
-mls.original <- read.csv('data/mls2001-2021.csv')
+mls.original <- read.csv('soccer-elo/data/mls2001-2021.csv')
 mls.big <- mls.original[,c('home', 'away', 'date', 'year', 'venue', 'league', 
                            'game_status', 'shootout', 'home_score', 
                            'away_score', 'part_of_competition')]
@@ -326,7 +326,8 @@ image(x=ls.omega, y=ls.hfa,
 best.ind = which(log.likelihood.glicko == max(log.likelihood.glicko), arr.ind = TRUE)
 best.omega = ls.omega[best.ind[[1]]]
 best.hfa = ls.hfa[best.ind[[2]]]
-
+best.omega = 60
+best.hfa = 100
 ratings.glicko = glicko(mls[mls$year>2002 & mls$year <= 2017,], 
                         status=ratings.glicko$ratings, cval=best.omega, gamma=best.hfa)
 
@@ -515,7 +516,7 @@ time.C.g.pred <- predict(elo.g.result.fit, newdata=time.C.df.g)
 time.C.glicko.pred <- predict(glicko.base.result.fit, newdata=time.C.df)
 
 # Predict match results for AVG and MAX methods
-odds <- read.csv('data/mls_closing_odds.csv')
+odds <- read.csv('soccer-elo/data/mls_closing_odds.csv')
 
 odds$year <- format(as.Date(odds$match_date), "%Y")
 
@@ -743,13 +744,13 @@ quad.loss.sd <- function(y, y.pred) {
   loss_l = (true_outcomes[,"loss"] - y.pred[, "p.loss"])**2
   tie_l = (true_outcomes[, "tie"] - y.pred[, "p.tie"])**2
   win_l = (true_outcomes[, "win"] - y.pred[, "p.win"])**2
-  return(sd(loss_l+tie_l+win_l))
+  return(sd(loss_l+tie_l+win_l, na.rm = TRUE))
 }
 info.loss <- function(df, coef, zeta, column = "rating.diff") {
-   return(mean(-1 * log2(pred.prob(df, coef, zeta, column = column))))
+   return(mean(-1 * log2(pred.prob(df, coef, zeta, column = column)), na.rm= TRUE))
 }
 info.loss.sd <- function(df, coef, zeta, column = "rating.diff") {
-  return(sd(-1 * log2(pred.prob(df, coef, zeta, column = column))))
+  return(sd(-1 * log2(pred.prob(df, coef, zeta, column = column)), na.rm= TRUE))
 }
 
 elo.b.probs = pred.prob.all(time.C.df, elo.base.result.fit$coefficients, elo.base.result.fit$zeta)
@@ -759,7 +760,7 @@ glicko.probs = pred.prob.all(time.C.df, glicko.base.result.fit$coefficients, gli
 unif.probs.temp <- data.frame('p.loss'=rep(1/3, length(unif_outcomes)),
                               'p.tie'=rep(1/3, length(unif_outcomes)),
                               'p.win'=rep(1/3, length(unif_outcomes)))
-function(df) {
+pred.freq.prob <- function(df) {
   mini.fn <- function(row) {
     # print(typeof(row[['rating.diff']]))
     # print(row[['rating.diff']])
@@ -783,7 +784,7 @@ function(df) {
   return(apply(df, 1, mini.fn))
 }
 
-
+indx <- as.integer(rownames(betting.odds.pred))
 # Calculate loss
 loss.df <- data.frame('method'=c('ELO.b', 'ELO.g', 'GLICKO', 'AVG', 'MAX', 'UNIF', 'FREQ'),
                       'quad.loss'= 
@@ -833,7 +834,7 @@ loss.df.2 <- data.frame('method'=c('ELO.b', 'ELO.g', 'GLICKO', 'AVG', 'MAX', 'UN
                           quad.loss(time.C.df[indx,'result'], 
                                     max.probs.temp),
                           quad.loss(time.C.df$result[indx], unif.probs.temp[indx,]),
-                          quad.loss(time.C.df$result[indx], time.C.freq.pred[indx])),
+                          quad.loss(time.C.df$result[indx], frequency.probs[indx,])),
                       'quad.loss.sd'= 
                         c(quad.loss.sd(time.C.df$result[indx], elo.b.probs[indx,]),
                           quad.loss.sd(time.C.df.g$result[indx], elo.g.probs[indx,]),
@@ -843,7 +844,7 @@ loss.df.2 <- data.frame('method'=c('ELO.b', 'ELO.g', 'GLICKO', 'AVG', 'MAX', 'UN
                           quad.loss.sd(time.C.df[indx,'result'], 
                                        max.probs.temp),
                           quad.loss.sd(time.C.df$result, unif.probs.temp)),
-                          quad.loss.sd(time.C.df$result, pred.freq.prob(time.C.df)),
+                          quad.loss.sd(time.C.df$result[indx], frequency.probs[indx,]),
                       'info.loss'=
                         c(info.loss(time.C.df[indx,], elo.base.result.fit$coefficients, elo.base.result.fit$zeta),
                           info.loss(time.C.df.g[indx,], elo.g.result.fit$coefficients, elo.g.result.fit$zeta),
