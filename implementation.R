@@ -545,6 +545,20 @@ pred.prob <- function(df, coef, zeta) {
   return(apply(df, 1, mini.fn))
 }
 
+pred.prob.all <- function(df, coef, zeta) {
+  res = data.frame(p.loss=numeric(0),p.tie=numeric(0),p.win=numeric(0))
+  for (i in 1:dim(df)[1]) {
+    row = df[i,]
+    res[i, "p.loss"] <- (1 + exp((-1)*(zeta[[1]] - as.double(row[['rating.diff']]) * 
+                               coef[[1]])))**(-1)
+    res[i, "p.tie"] <- (1 + exp((-1)*(zeta[[2]] - as.double(row[['rating.diff']]) * 
+                              coef[[1]])))**(-1) - res[i, "p.loss"]
+    res[i, "p.win"] <- 1 - (1 + exp((-1)*(zeta[[2]] - as.double(row[['rating.diff']]) * 
+                                  coef[[1]])))**(-1)
+  }
+  return(res)
+}
+
 set.seed(143)
 
 pred.prob(time.C.df, elo.base.result.fit$coefficients, elo.base.result.fit$zeta)
@@ -553,17 +567,36 @@ unif_outcomes = (ceiling(runif(dim(time.C.df)[1], min=-1, max=2)))/2
 
 # Define loss functions
 quad.loss <- function(y, y.pred) {
-  return (mean((y - y.pred)**2))
+  N = length(y)
+  true_outcomes = data.frame(loss=rep(0, N),tie=rep(0, N),win=rep(0, N))
+  for (i in 1:N) {
+    if (y[i]==0) {
+      true_outcomes[i, "loss"] = 1
+    }
+    else if (y[i]==0.5) {
+      true_outcomes[i, "tie"] = 1
+    }
+    else if (y[i]==1) {
+      true_outcomes[i, "win"] = 1
+    }
+  }
+  loss_l = (true_outcomes[,"loss"] - y.pred[, "p.loss"])**2
+  tie_l = (true_outcomes[, "tie"] - y.pred[, "p.tie"])**2
+  win_l = (true_outcomes[, "win"] - y.pred[, "p.win"])**2
+  return(sum(loss_l, tie_l, win_l)/N)
 }
 info.loss <- function(df, coef, zeta) {
    return(mean(-1 * log2(pred.prob(df, coef, zeta))))
 }
 
+elo.b.probs = pred.prob.all(time.C.df, elo.base.result.fit$coefficients, elo.base.result.fit$zeta)
+elo.g.probs = pred.prob.all(time.C.df.g, elo.g.result.fit$coefficients, elo.g.result.fit$zeta)
+
 # Calculate loss
 loss.df <- data.frame('method'=c('ELO.b', 'ELO.g', 'AVG', 'MAX', 'UNIF'),
                       'quad.loss'= 
-                        c(quad.loss(time.C.df$result, as.double(time.C.pred) / 2 - 0.5),
-                          quad.loss(time.C.df.g$result, as.double(time.C.g.pred) / 2 - 0.5),
+                        c(quad.loss(time.C.df$result, elo.b.probs),
+                          quad.loss(time.C.df.g$result, elo.g.probs),
                           quad.loss(time.C.df$result[as.integer(rownames(betting.odds.pred))], 
                                     betting.odds.pred$avg.pred),
                           quad.loss(time.C.df$result[as.integer(rownames(betting.odds.pred))], 
