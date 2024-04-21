@@ -3,7 +3,7 @@ library(reshape2)
 library(MASS) # required for ordinal logistic regression
 
 ##### Data Wrangling
-mls.original <- read.csv('data/mls2001-2021.csv')
+mls.original <- read.csv('soccer-elo/data/mls2001-2021.csv')
 mls.big <- mls.original[,c('home', 'away', 'date', 'year', 'venue', 'league', 
                            'game_status', 'shootout', 'home_score', 
                            'away_score', 'part_of_competition')]
@@ -236,16 +236,16 @@ kfac.init <- 30
 
 for (j in 1:length(ls.k.base.elo)) {
   ratings.elo.base <- elo(mls[mls$year==2002,], init=1500, 
-                       kfac=kfac.init, 
-                       gamma=0)
+                          kfac=kfac.init, 
+                          gamma=0)
   ratings.elo.base <- elo(mls[mls$year>2002 & mls$year <= 2017,], 
-                       status=ratings.elo.base$ratings, 
-                       kfac=ls.k.base.elo[j])
+                          status=ratings.elo.base$ratings, 
+                          kfac=ls.k.base.elo[j])
   # Validation on val set
   ll.tmp = 0
   for (val.year in 2018:2022){
     pred <- predict(ratings.elo.base, mls[mls$year==val.year,], 
-                          gamma=0)
+                    gamma=0)
     
     # Account for games with teams that have no ratings yet
     home_NA = (mls[mls$year  == val.year, "home"])[is.na(pred)]
@@ -266,9 +266,9 @@ for (j in 1:length(ls.k.base.elo)) {
             log(1-pred))
     # Update model 
     ratings.elo.base <- elo(mls[mls$year==val.year,], 
-                         init = 1500,
-                         kfac = ls.k.base.elo[j], 
-                         status = ratings.elo.base$ratings)
+                            init = 1500,
+                            kfac = ls.k.base.elo[j], 
+                            status = ratings.elo.base$ratings)
   }
   log.likelihood.k[j] = ll.tmp
 }
@@ -286,24 +286,25 @@ predict.fn.glicko <- function(t1, t2, ratings, gamma = 0){
   return (E)
 }
 
-ls.omega = (0:30)*2
-ls.hfa = 0:100
+ls.omega = (0:1000) * 2 
+ls.hfa = 0
 log.likelihood.glicko = matrix(0, nrow = length(ls.omega), ncol = length(ls.hfa))
 
 for (j in 1:length(ls.omega)){
   for (i in 1:length(ls.hfa)) {
     ratings.glicko = glicko(mls[mls$year==2002 & mls$year <= 2017,], init = c(1500, 350),
-            cval=ls.omega[j], gamma=ls.hfa[i], rdmax=15000, history = FALSE, sort=FALSE)
+                            cval=ls.omega[j], gamma=ls.hfa[i], rdmax=15000, history = FALSE, sort=FALSE)
     ll.tmp = 0
     for (val.year in 2019:2022){
-        pred = predict.fn.glicko(mls[mls$year==val.year,]$home,
-                                 mls[mls$year==val.year,]$away,
-                                 data.frame("est"=ratings.glicko$ratings[,2], 
-                                  "stderr"=sqrt(ratings.glicko$ratings[,3]^2 + 
-                                                  ls.omega[j]^2),
-                                 row.names = ratings.glicko$ratings[,1]),
-                                 gamma = ls.hfa[i])
-        
+      pred = predict.fn.glicko(mls[mls$year==val.year,]$home,
+                               mls[mls$year==val.year,]$away,
+                               data.frame("est"=ratings.glicko$ratings[,2], 
+                                          "stderr"=sqrt(ratings.glicko$ratings[,3]^2 + 
+                                                          ls.omega[j]^2),
+                                          row.names = ratings.glicko$ratings[,1]),
+                               gamma = ls.hfa[i])
+      
+
       # Log-likelihood
       ll.tmp <- 
         ll.tmp+sum(log(pred^mls[mls$year==val.year,]$result*
@@ -312,7 +313,7 @@ for (j in 1:length(ls.omega)){
       ratings.glicko <- glicko(mls[mls$year==val.year,], 
                                status = ratings.glicko$ratings, 
                                cval=ls.omega[j], gamma=ls.hfa[i], sort=FALSE)
-      }
+    }
     log.likelihood.glicko[j, i] = ll.tmp
   }
 }
@@ -327,9 +328,10 @@ image(x=ls.omega, y=ls.hfa,
 best.ind = which(log.likelihood.glicko == max(log.likelihood.glicko), arr.ind = TRUE)
 best.omega = ls.omega[best.ind[[1]]]
 best.hfa = ls.hfa[best.ind[[2]]]
-
+# best.omega = 60
+# best.hfa = 100
 ratings.glicko = glicko(mls[mls$year>2002 & mls$year <= 2017,], 
-                    status=ratings.glicko$ratings, cval=best.omega, gamma=best.hfa)
+                        status=ratings.glicko$ratings, cval=best.omega, gamma=best.hfa)
 
 ##### Write the H&A four-step procedure
 
@@ -343,14 +345,14 @@ time.C <- 2011:2015
 # First use k0 = 30, lambda = 0 
 ratings.elo.init <- elo(mls[mls.g$year == 2002,], init=1500, kfac=30)
 ratings.elo.g.init <- elo.g(mls.g[mls.g$year == 2002,], init=1500, k0=30, lambda=0,
-                         gamma=0)
+                            gamma=0)
 
 # Then use optimal parameters to fit ratings
 ratings.elo.A <- elo(mls[mls$year %in% time.A & mls$year > 2002,], init=1500, 
-                        status=ratings.elo.init$ratings, kfac=best.k.base.elo)
+                     status=ratings.elo.init$ratings, kfac=best.k.base.elo)
 ratings.elo.g.A <- elo.g(mls.g[mls.g$year %in% time.A & mls.g$year > 2002,],
-                       status=ratings.elo.g.init$ratings, k0=best.k, 
-                       lambda=best.lambda, gamma=0)
+                         status=ratings.elo.g.init$ratings, k0=best.k, 
+                         lambda=best.lambda, gamma=0)
 ratings.glicko.A <- glicko(mls[mls$year %in% time.A & mls$year >= 2002,],
                            init=c(1500,300), cval=best.omega, gamma=best.hfa)
 
@@ -365,11 +367,11 @@ time.B.df.g <- mls.g[mls.g$year %in% time.B,]
 ratings.elo.B <- elo(time.B.df, init=1500, status=ratings.elo.A$ratings, 
                      kfac=best.k.base.elo, history=TRUE)
 ratings.elo.g.B <- elo.g(time.B.df.g,
-                       status=ratings.elo.g.A$ratings, k0=best.k, 
-                       lambda=best.lambda, gamma=0)
+                         status=ratings.elo.g.A$ratings, k0=best.k, 
+                         lambda=best.lambda, gamma=0)
 ratings.glicko.B <- glicko(time.B.df,
-                         status=ratings.glicko.A$ratings, cval=best.omega, 
-                         gamma=best.hfa, history = TRUE)
+                           status=ratings.glicko.A$ratings, cval=best.omega, 
+                           gamma=best.hfa, history = TRUE)
 
 # To compare ratings from each system to help diagnose why ELO.b model 
 # only predicts a home win for every match
@@ -404,10 +406,22 @@ time.B.df.g$away.rating <- -1e6
 for (i in 1:dim(time.B.df.g)[1]) {
   time.B.df.g[i, 'home.rating'] <- 
     ratings.elo.g.B$history[time.B.df.g[i, 'home'], 
-                          as.character(time.B.df.g[i, 'year'])]
+                            as.character(time.B.df.g[i, 'year'])]
   time.B.df.g[i, 'away.rating'] <- 
     ratings.elo.g.B$history[time.B.df.g[i, 'away'], 
-                          as.character(time.B.df.g[i, 'year'])]
+                            as.character(time.B.df.g[i, 'year'])]
+}
+
+
+time.B.df$glicko.home.rating <- -1e6
+time.B.df$glicko.away.rating <- -1e6
+for (i in 1:dim(time.B.df)[1]) {
+  time.B.df[i, 'glicko.home.rating'] <- 
+    ratings.glicko.B.history[time.B.df[i, 'home'], 
+                             as.character(time.B.df[i, 'year'])]
+  time.B.df[i, 'glicko.away.rating'] <- 
+    ratings.glicko.B.history[time.B.df[i, 'away'], 
+                             as.character(time.B.df[i, 'year'])]
 }
 
 
@@ -452,8 +466,13 @@ ratings.elo.C <- elo(time.C.df, init=1500, status=ratings.elo.B$ratings,
                      kfac=best.k.base.elo, history=TRUE)
 
 ratings.elo.g.C <- elo.g(time.C.df.g ,
-                       status=ratings.elo.g.B$ratings, k0=best.k, 
-                       lambda=best.lambda, gamma=0)
+                         status=ratings.elo.g.B$ratings, k0=best.k, 
+                         lambda=best.lambda, gamma=0)
+
+ratings.glicko.C <- glicko(time.C.df,
+                           status=ratings.glicko.B$ratings, cval=best.omega, 
+                           gamma=best.hfa, history = TRUE)
+
 
 ratings.glicko.C <- glicko(time.C.df,
                          status=ratings.glicko.B$ratings, cval=best.omega, 
@@ -484,10 +503,22 @@ time.C.df.g$away.rating <- -1e6
 for (i in 1:dim(time.C.df.g)[1]) {
   time.C.df.g[i, 'home.rating'] <- 
     ratings.elo.g.C$history[time.C.df.g[i, 'home'], 
-                          as.character(time.C.df.g[i, 'year'])]
+                            as.character(time.C.df.g[i, 'year'])]
   time.C.df.g[i, 'away.rating'] <- 
     ratings.elo.g.C$history[time.C.df.g[i, 'away'], 
-                          as.character(time.C.df.g[i, 'year'])]
+                            as.character(time.C.df.g[i, 'year'])]
+}
+
+
+time.C.df$glicko.home.rating <- -1e6
+time.C.df$glicko.away.rating <- -1e6
+for (i in 1:dim(time.C.df)[1]) {
+  time.C.df[i, 'glicko.home.rating'] <- 
+    ratings.glicko.C.history[time.C.df[i, 'home'], 
+                             as.character(time.C.df[i, 'year'])]
+  time.C.df[i, 'glicko.away.rating'] <- 
+    ratings.glicko.C.history[time.C.df[i, 'away'], 
+                             as.character(time.C.df[i, 'year'])]
 }
 
 
@@ -547,14 +578,20 @@ odds[odds$away_team == 'New York City', 'away_team'] <- "New York City FC"
 
 betting.odds.pred <- data.frame('avg.pred'=rep(-1e6, length(time.C.g.pred)),
                                 'avg.prob'=rep(-1e6, length(time.C.g.pred)),
+                                'avg.p.loss'=rep(-1e6, length(time.C.g.pred)),
+                                'avg.p.tie'=rep(-1e6, length(time.C.g.pred)),
+                                'avg.p.win'=rep(-1e6, length(time.C.g.pred)),
                                 'max.pred'=rep(-1e6, length(time.C.g.pred)),
-                                'max.prob'=rep(-1e6, length(time.C.g.pred)))
+                                'max.prob'=rep(-1e6, length(time.C.g.pred)),
+                                'max.p.loss'=rep(-1e6, length(time.C.g.pred)),
+                                'max.p.tie'=rep(-1e6, length(time.C.g.pred)),
+                                'max.p.win'=rep(-1e6, length(time.C.g.pred)))
 for (i in 1:dim(time.C.df.g)[1]) {
   if (dim(odds[format(as.Date(odds$match_date), "%Y-%m") == 
                format(as.Date(time.C.df.g[i, 'date']), "%Y-%m") & 
                   odds$home_team == time.C.df.g[i, 'home'] &
                   odds$away_team == time.C.df.g[i, 'away'],])[1] < 1) {
-    betting.odds.pred[i,] <- rep(NA, 4)
+    betting.odds.pred[i,] <- rep(NA, 10)
   } else {
     ind <- which(format(as.Date(odds$match_date), "%Y-%m") == 
                    format(as.Date(time.C.df.g[i, 'date']), "%Y-%m") & 
@@ -572,9 +609,9 @@ for (i in 1:dim(time.C.df.g)[1]) {
     avg.probs <- avg.probs * (1 / sum(avg.probs))
     betting.odds.pred[i, 'avg.prob'] <- 
       avg.probs[(time.C.df.g[i, 'result'] + 0.5) * 2]
-    betting.odds.pred[i, 'avg.prob.home.loss'] <- avg.probs[1]
-    betting.odds.pred[i, 'avg.prob.draw'] <- avg.probs[2]
-    betting.odds.pred[i, 'avg.prob.home.win'] <- avg.probs[3]
+    betting.odds.pred[i, 'avg.p.loss'] <- avg.probs[1]
+    betting.odds.pred[i, 'avg.p.tie'] <- avg.probs[2]
+    betting.odds.pred[i, 'avg.p.win'] <- avg.probs[3]
     
     max.odds <- 
       c(odds[ind,'max_odds_away_win'],
@@ -585,13 +622,17 @@ for (i in 1:dim(time.C.df.g)[1]) {
     max.probs <- max.probs * (1 / sum(max.probs))
     betting.odds.pred[i, 'max.prob'] <- 
       max.probs[(time.C.df.g[i, 'result'] + 0.5) * 2]
-    betting.odds.pred[i, 'max.prob.home.loss'] <- max.probs[1]
-    betting.odds.pred[i, 'max.prob.draw'] <- max.probs[2]
-    betting.odds.pred[i, 'max.prob.home.win'] <- max.probs[3]
+    betting.odds.pred[i, 'max.p.loss'] <- max.probs[1]
+    betting.odds.pred[i, 'max.p.tie'] <- avg.probs[2]
+    betting.odds.pred[i, 'max.p.win'] <- avg.probs[3]
   }
 }
 
 betting.odds.pred <- na.omit(betting.odds.pred)
+avg.probs.temp <- betting.odds.pred[,c('avg.p.loss', 'avg.p.tie', 'avg.p.win')]
+colnames(avg.probs.temp) <- c("p.loss", "p.tie", "p.win")
+max.probs.temp <- betting.odds.pred[,c('max.p.loss', 'max.p.tie', 'max.p.win')]
+colnames(max.probs.temp) <- c("p.loss", "p.tie", "p.win")
 
 # Verify the results of the betting odds strategies in different ways
 check.predictions <- cbind(betting.odds.pred[,c('avg.pred','max.pred')], 
@@ -600,7 +641,7 @@ dim(check.predictions[check.predictions[,1] != check.predictions[,3],])
 dim(check.predictions[check.predictions[,1] == 0 & check.predictions[,3] == 0,])
 
 # Define function to get model's predicted probability for the true outcome
-pred.prob <- function(df, coef, zeta, column = 'rating.diff') {
+pred.prob <- function(df, coef, zeta, column = "rating.diff") {
   mini.fn <- function(row) {
     # print(typeof(row[['rating.diff']]))
     # print(row[['rating.diff']])
@@ -621,6 +662,82 @@ pred.prob <- function(df, coef, zeta, column = 'rating.diff') {
   return(apply(df, 1, mini.fn))
 }
 
+pred.prob.all <- function(df, coef, zeta, column = 'rating.diff') {
+  res = data.frame(p.loss=numeric(0),p.tie=numeric(0),p.win=numeric(0))
+  for (i in 1:dim(df)[1]) {
+    row = df[i,]
+    res[i, "p.loss"] <- (1 + exp((-1)*(zeta[[1]] - as.double(row[[column]]) * 
+                               coef[[1]])))**(-1)
+    res[i, "p.tie"] <- (1 + exp((-1)*(zeta[[2]] - as.double(row[[column]]) * 
+                              coef[[1]])))**(-1) - res[i, "p.loss"]
+    res[i, "p.win"] <- 1 - (1 + exp((-1)*(zeta[[2]] - as.double(row[[column]]) * 
+                                  coef[[1]])))**(-1)
+  }
+  return(res)
+}
+
+frequency = data.frame("team"=unique(mls.regular.season$home),
+                       "w"=0,
+                       "t"=0,
+                       "l"=0,
+                       "total"=0)
+
+time.AB.df.g = mls.g[mls.g$year %in% time.B | mls.g$year %in% time.A,]
+for (i in 1:dim(time.AB.df.g)[1]) {
+  home = time.AB.df.g[i,]$home
+  away = time.AB.df.g[i,]$away
+  if (time.AB.df.g[i,]$result == 1.0) {
+    frequency$w[frequency$team == home] = frequency$w[frequency$team == home] + 1
+    # frequency$l[frequency$team == away] = frequency$w[frequency$team == away] + 1
+  } else if (time.AB.df.g[i,]$result == 0.5) { 
+    frequency$t[frequency$team == home] = frequency$t[frequency$team == home] + 1
+    # frequency$t[frequency$team == away] = frequency$t[frequency$team == away] + 1
+  } else {
+    frequency$l[frequency$team == home] = frequency$w[frequency$team == home] + 1
+    # frequency$w[frequency$team == away] = frequency$l[frequency$team == away] + 1
+  }
+  frequency$total[frequency$team == home] = frequency$total[frequency$team == home] + 1
+  # frequency$total[frequency$team == away] = frequency$total[frequency$team == away] + 1
+  
+}
+time.C.freq.pred = rep(0, dim(time.C.df.g)[1])
+frequency.probs = data.frame(p.loss=numeric(0),p.tie=numeric(0),p.win=numeric(0))
+
+for (i in 1:dim(time.C.df.g)[1]) {
+  home = time.C.df.g[i,]$home
+  home_wins = frequency$w[frequency$team == home]
+  home_ties = frequency$t[frequency$team == home]
+  home_losses = frequency$l[frequency$team == home]
+  home_total = frequency$total[frequency$team == home]
+  if (home_total != 0) {
+    result = sample(c(1, 0.5, 0), 
+                    prob = c(home_wins/home_total, home_ties/home_total, home_losses/home_total),
+                    size = 1)
+    frequency.probs[i, "p.loss"] = home_losses/home_total
+    frequency.probs[i, "p.tie"] = home_ties/home_total
+    frequency.probs[i, "p.win"] = home_wins/home_total
+  } else {
+    # if there is no freq history, then just default to uniform
+    result = sample(c(1, 0.5, 0), 
+                    prob = c(1/3, 1/3, 1/3),
+                    size = 1)
+    frequency.probs[i, "p.loss"] = 1/3
+    frequency.probs[i, "p.tie"] = 1/3
+    frequency.probs[i, "p.win"] = 1/3
+  }
+  
+  time.C.freq.pred[i] = result
+  # update frequency table
+  if (time.C.df[i,]$result == 1.0) {
+    frequency$w[frequency$team == home] = home_wins + 1
+  } else if (time.C.df[i,]$result == 0.5) { 
+    frequency$t[frequency$team == home] = home_ties + 1
+  } else {
+    frequency$l[frequency$team == home] = home_losses + 1
+  }
+  frequency$total[frequency$team == home] = home_total + 1
+}
+
 set.seed(143)
 
 pred.prob(time.C.df, elo.base.result.fit$coefficients, elo.base.result.fit$zeta)
@@ -630,48 +747,159 @@ pred.prob(time.C.df, glicko.base.result.fit$coefficients, glicko.base.result.fit
 
 # Define loss functions
 quad.loss <- function(y, y.pred) {
-  return (mean((y - y.pred)**2))
+  N = length(y)
+  true_outcomes = data.frame(loss=rep(0, N),tie=rep(0, N),win=rep(0, N))
+  for (i in 1:N) {
+    if (y[i]==0) {
+      true_outcomes[i, "loss"] = 1
+    }
+    else if (y[i]==0.5) {
+      true_outcomes[i, "tie"] = 1
+    }
+    else if (y[i]==1) {
+      true_outcomes[i, "win"] = 1
+    }
+  }
+  loss_l = (true_outcomes[,"loss"] - y.pred[, "p.loss"])**2
+  tie_l = (true_outcomes[, "tie"] - y.pred[, "p.tie"])**2
+  win_l = (true_outcomes[, "win"] - y.pred[, "p.win"])**2
+  return(sum(loss_l, tie_l, win_l, na.rm = TRUE)/N)
 }
-info.loss <- function(df, coef, zeta) {
-   return(mean(-1 * log2(pred.prob(df, coef, zeta))))
+quad.loss.sd <- function(y, y.pred) {
+  N = length(y)
+  true_outcomes = data.frame(loss=rep(0, N),tie=rep(0, N),win=rep(0, N))
+  for (i in 1:N) {
+    if (y[i]==0) {
+      true_outcomes[i, "loss"] = 1
+    }
+    else if (y[i]==0.5) {
+      true_outcomes[i, "tie"] = 1
+    }
+    else if (y[i]==1) {
+      true_outcomes[i, "win"] = 1
+    }
+  }
+  loss_l = (true_outcomes[,"loss"] - y.pred[, "p.loss"])**2
+  tie_l = (true_outcomes[, "tie"] - y.pred[, "p.tie"])**2
+  win_l = (true_outcomes[, "win"] - y.pred[, "p.win"])**2
+  return(sd(loss_l+tie_l+win_l, na.rm = TRUE))
+}
+info.loss <- function(df, coef, zeta, column = "rating.diff") {
+   return(mean(-1 * log2(pred.prob(df, coef, zeta, column = column)), na.rm= TRUE))
+}
+info.loss.sd <- function(df, coef, zeta, column = "rating.diff") {
+  return(sd(-1 * log2(pred.prob(df, coef, zeta, column = column)), na.rm= TRUE))
 }
 
+elo.b.probs = pred.prob.all(time.C.df, elo.base.result.fit$coefficients, elo.base.result.fit$zeta)
+elo.g.probs = pred.prob.all(time.C.df.g, elo.g.result.fit$coefficients, elo.g.result.fit$zeta)
+glicko.probs = pred.prob.all(time.C.df, glicko.base.result.fit$coefficients, glicko.base.result.fit$zeta, column = "glicko.rating.diff")
+
+unif.probs.temp <- data.frame('p.loss'=rep(1/3, length(unif_outcomes)),
+                              'p.tie'=rep(1/3, length(unif_outcomes)),
+                              'p.win'=rep(1/3, length(unif_outcomes)))
+pred.freq.prob <- function(df) {
+  mini.fn <- function(row) {
+    # print(typeof(row[['rating.diff']]))
+    # print(row[['rating.diff']])
+    home = time.C.df.g[i,]$home
+    home_wins = frequency$w[frequency$team == home]
+    home_ties = frequency$t[frequency$team == home]
+    home_losses = frequency$l[frequency$team == home]
+    home_total = frequency$total[frequency$team == home]
+    
+    p.loss <- home_losses / home_total
+    p.tie <- home_ties / home_total
+    p.win <- home_wins / home_total
+    if (row['result'] <= 0 ) {
+      return(p.loss)
+    } 
+    if (row['result'] <= 0.5) {
+      return(p.tie)
+    }
+    return(p.win)
+  }
+  return(apply(df, 1, mini.fn))
+}
+
+indx <- as.integer(rownames(betting.odds.pred))
 # Calculate loss
-loss.df <- data.frame('method'=c('ELO.b', 'ELO.g', 'GLICKO', 'AVG', 'MAX', 'UNIF'),
+loss.df <- data.frame('method'=c('ELO.b', 'ELO.g', 'GLICKO', 'AVG', 'MAX', 'UNIF', 'FREQ'),
                       'quad.loss'= 
-                        c(quad.loss(time.C.df$result, as.double(time.C.pred) / 2 - 0.5),
-                          quad.loss(time.C.df.g$result, as.double(time.C.g.pred) / 2 - 0.5),
-                          quad.loss(time.C.df$result, as.double(time.C.glicko.pred) / 2 - 0.5),
-                          quad.loss(time.C.df$result[as.integer(rownames(betting.odds.pred))], 
-                                    betting.odds.pred$avg.pred),
-                          quad.loss(time.C.df$result[as.integer(rownames(betting.odds.pred))], 
-                                    betting.odds.pred$max.pred),
-                          quad.loss(time.C.df$result, unif_outcomes)),
+                        c(quad.loss(time.C.df$result, elo.b.probs),
+                          quad.loss(time.C.df.g$result, elo.g.probs),
+                          quad.loss(time.C.df$result, glicko.probs),
+                          quad.loss(time.C.df[indx, 'result'], 
+                                    avg.probs.temp),
+                          quad.loss(time.C.df[indx,'result'], 
+                                    max.probs.temp),
+                          quad.loss(time.C.df$result, unif.probs.temp),
+                          quad.loss(time.C.df$result, frequency.probs)),
+                      'quad.loss.sd'= 
+                        c(quad.loss.sd(time.C.df$result, elo.b.probs),
+                          quad.loss.sd(time.C.df.g$result, elo.g.probs),
+                          quad.loss.sd(time.C.df$result, glicko.probs),
+                          quad.loss.sd(time.C.df[indx, 'result'], 
+                                    avg.probs.temp),
+                          quad.loss.sd(time.C.df[indx,'result'], 
+                                    max.probs.temp),
+                          quad.loss.sd(time.C.df$result, unif.probs.temp),
+                          quad.loss.sd(time.C.df$result, frequency.probs)),
                       'info.loss'=
                         c(info.loss(time.C.df, elo.base.result.fit$coefficients, elo.base.result.fit$zeta),
                           info.loss(time.C.df.g, elo.g.result.fit$coefficients, elo.g.result.fit$zeta),
-                          info.loss(time.C.df, glicko.base.result.fit$coefficients, glicko.base.result.fit$zeta),
+                          info.loss(time.C.df, glicko.base.result.fit$coefficients, glicko.base.result.fit$zeta, column = "glicko.rating.diff"),
                           mean(-1 * log2(betting.odds.pred$avg.prob)),
                           mean(-1 * log2(betting.odds.pred$max.prob)),
-                          -1 * log2(1/3)))
-indx <- as.integer(rownames(betting.odds.pred))
-loss.df.2 <- data.frame('method'=c('ELO.b', 'ELO.g', 'GLICKO', 'AVG', 'MAX', 'UNIF'),
+                          -1 * log2(1/3),
+                          mean(-1 * log2(pred.freq.prob(time.C.df)))),
+                      'info.loss.sd'=
+                        c(info.loss.sd(time.C.df, elo.base.result.fit$coefficients, elo.base.result.fit$zeta),
+                          info.loss.sd(time.C.df.g, elo.g.result.fit$coefficients, elo.g.result.fit$zeta),
+                          info.loss.sd(time.C.df, glicko.base.result.fit$coefficients, glicko.base.result.fit$zeta, column = "glicko.rating.diff"),
+                          sd(-1 * log2(betting.odds.pred$avg.prob)),
+                          sd(-1 * log2(betting.odds.pred$max.prob)),
+                          0,
+                          sd(-1 * log2(pred.freq.prob(time.C.df)))))
+
+loss.df.2 <- data.frame('method'=c('ELO.b', 'ELO.g', 'GLICKO', 'AVG', 'MAX', 'UNIF', 'FREQ'),
                       'quad.loss'= 
-                        c(quad.loss(time.C.df$result[indx], as.double(time.C.pred[indx]) / 2 - 0.5),
-                          quad.loss(time.C.df.g$result[indx], as.double(time.C.g.pred[indx]) / 2 - 0.5),
-                          quad.loss(time.C.df$result[indx], as.double(time.C.glicko.pred[indx]) / 2 - 0.5),
-                          quad.loss(time.C.df$result[as.integer(rownames(betting.odds.pred))], 
-                                    betting.odds.pred$avg.pred),
-                          quad.loss(time.C.df$result[as.integer(rownames(betting.odds.pred))], 
-                                    betting.odds.pred$max.pred),
-                          quad.loss(time.C.df$result[indx], unif_outcomes[as.integer(rownames(betting.odds.pred))])),
+                        c(quad.loss(time.C.df$result[indx], elo.b.probs[indx,]),
+                          quad.loss(time.C.df.g$result[indx], elo.g.probs[indx,]),
+                          quad.loss(time.C.df$result[indx], glicko.probs[indx,]),
+                          quad.loss(time.C.df[indx, 'result'], 
+                                    avg.probs.temp),
+                          quad.loss(time.C.df[indx,'result'], 
+                                    max.probs.temp),
+                          quad.loss(time.C.df$result[indx], unif.probs.temp[indx,]),
+                          quad.loss(time.C.df$result[indx], frequency.probs[indx,])),
+                      'quad.loss.sd'= 
+                        c(quad.loss.sd(time.C.df$result[indx], elo.b.probs[indx,]),
+                          quad.loss.sd(time.C.df.g$result[indx], elo.g.probs[indx,]),
+                          quad.loss.sd(time.C.df$result[indx], glicko.probs[indx,]),
+                          quad.loss.sd(time.C.df[indx, 'result'], 
+                                       avg.probs.temp),
+                          quad.loss.sd(time.C.df[indx,'result'], 
+                                       max.probs.temp),
+                          quad.loss.sd(time.C.df$result, unif.probs.temp),
+                          quad.loss.sd(time.C.df$result[indx], frequency.probs[indx,])),
                       'info.loss'=
                         c(info.loss(time.C.df[indx,], elo.base.result.fit$coefficients, elo.base.result.fit$zeta),
                           info.loss(time.C.df.g[indx,], elo.g.result.fit$coefficients, elo.g.result.fit$zeta),
-                          info.loss(time.C.df[indx,], glicko.base.result.fit$coefficients, glicko.base.result.fit$zeta),
+                          info.loss(time.C.df[indx,], glicko.base.result.fit$coefficients, glicko.base.result.fit$zeta, column = "glicko.rating.diff"),
+
                           mean(-1 * log2(betting.odds.pred$avg.prob)),
                           mean(-1 * log2(betting.odds.pred$max.prob)),
-                          -1 * log2(1/3)))
+                          -1 * log2(1/3),
+                          mean(-1 * log2(pred.freq.prob(time.C.df)))),
+                      'info.loss.sd'=
+                        c(info.loss.sd(time.C.df[indx,], elo.base.result.fit$coefficients, elo.base.result.fit$zeta),
+                          info.loss.sd(time.C.df.g[indx,], elo.g.result.fit$coefficients, elo.g.result.fit$zeta),
+                          info.loss.sd(time.C.df[indx,], glicko.base.result.fit$coefficients, glicko.base.result.fit$zeta, column = "glicko.rating.diff"),
+                          sd(-1 * log2(betting.odds.pred$avg.prob)),
+                          sd(-1 * log2(betting.odds.pred$max.prob)),
+                          0,
+                          sd(-1 * log2(pred.freq.prob(time.C.df)))))
 
 ##### Recreate Fig. 3 for our ordered logit model with goal difference
 dummy.diff <- -600:600
