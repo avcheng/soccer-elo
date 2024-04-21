@@ -545,10 +545,11 @@ pred.prob <- function(df, coef, zeta) {
   return(apply(df, 1, mini.fn))
 }
 
-# MIGHT STILL BE A PROBLEM WITH NA VALUES — SAM
-# I AM NOT HAVING THIS SAME PROBLEM — DANIEL 
+set.seed(143)
+
 pred.prob(time.C.df, elo.base.result.fit$coefficients, elo.base.result.fit$zeta)
 pred.prob(time.C.df.g, elo.g.result.fit$coefficients, elo.g.result.fit$zeta)
+unif_outcomes = (ceiling(runif(dim(time.C.df)[1], min=-1, max=2)))/2
 
 # Define loss functions
 quad.loss <- function(y, y.pred) {
@@ -559,34 +560,37 @@ info.loss <- function(df, coef, zeta) {
 }
 
 # Calculate loss
-loss.df <- data.frame('method'=c('ELO.b', 'ELO.g', 'AVG', 'MAX'),
+loss.df <- data.frame('method'=c('ELO.b', 'ELO.g', 'AVG', 'MAX', 'UNIF'),
                       'quad.loss'= 
                         c(quad.loss(time.C.df$result, as.double(time.C.pred) / 2 - 0.5),
                           quad.loss(time.C.df.g$result, as.double(time.C.g.pred) / 2 - 0.5),
                           quad.loss(time.C.df$result[as.integer(rownames(betting.odds.pred))], 
                                     betting.odds.pred$avg.pred),
                           quad.loss(time.C.df$result[as.integer(rownames(betting.odds.pred))], 
-                                    betting.odds.pred$max.pred)),
+                                    betting.odds.pred$max.pred),
+                          quad.loss(time.C.df$result, unif_outcomes)),
                       'info.loss'=
                         c(info.loss(time.C.df, elo.base.result.fit$coefficients, elo.base.result.fit$zeta),
                           info.loss(time.C.df.g, elo.g.result.fit$coefficients, elo.g.result.fit$zeta),
                           mean(-1 * log2(betting.odds.pred$avg.prob)),
-                          mean(-1 * log2(betting.odds.pred$max.prob))))
+                          mean(-1 * log2(betting.odds.pred$max.prob)),
+                          -1 * log2(1/3)))
 indx <- as.integer(rownames(betting.odds.pred))
-loss.df.2 <- data.frame('method'=c('ELO.b', 'ELO.g', 'AVG', 'MAX'),
+loss.df.2 <- data.frame('method'=c('ELO.b', 'ELO.g', 'AVG', 'MAX', 'UNIF'),
                       'quad.loss'= 
                         c(quad.loss(time.C.df$result[indx], as.double(time.C.pred[indx]) / 2 - 0.5),
                           quad.loss(time.C.df.g$result[indx], as.double(time.C.g.pred[indx]) / 2 - 0.5),
                           quad.loss(time.C.df$result[as.integer(rownames(betting.odds.pred))], 
                                     betting.odds.pred$avg.pred),
                           quad.loss(time.C.df$result[as.integer(rownames(betting.odds.pred))], 
-                                    betting.odds.pred$max.pred)),
+                                    betting.odds.pred$max.pred),
+                          quad.loss(time.C.df$result[indx], unif_outcomes[as.integer(rownames(betting.odds.pred))])),
                       'info.loss'=
                         c(info.loss(time.C.df[indx,], elo.base.result.fit$coefficients, elo.base.result.fit$zeta),
                           info.loss(time.C.df.g[indx,], elo.g.result.fit$coefficients, elo.g.result.fit$zeta),
                           mean(-1 * log2(betting.odds.pred$avg.prob)),
-                          mean(-1 * log2(betting.odds.pred$max.prob))))
-
+                          mean(-1 * log2(betting.odds.pred$max.prob)),
+                          -1 * log2(1/3)))
 
 ##### Recreate Fig. 3 for our ordered logit model with goal difference
 dummy.diff <- -600:600
