@@ -477,14 +477,20 @@ odds[odds$away_team == 'New York City', 'away_team'] <- "New York City FC"
 
 betting.odds.pred <- data.frame('avg.pred'=rep(-1e6, length(time.C.g.pred)),
                                 'avg.prob'=rep(-1e6, length(time.C.g.pred)),
+                                'avg.p.loss'=rep(-1e6, length(time.C.g.pred)),
+                                'avg.p.tie'=rep(-1e6, length(time.C.g.pred)),
+                                'avg.p.win'=rep(-1e6, length(time.C.g.pred)),
                                 'max.pred'=rep(-1e6, length(time.C.g.pred)),
-                                'max.prob'=rep(-1e6, length(time.C.g.pred)))
+                                'max.prob'=rep(-1e6, length(time.C.g.pred)),
+                                'max.p.loss'=rep(-1e6, length(time.C.g.pred)),
+                                'max.p.tie'=rep(-1e6, length(time.C.g.pred)),
+                                'max.p.win'=rep(-1e6, length(time.C.g.pred)))
 for (i in 1:dim(time.C.df.g)[1]) {
   if (dim(odds[format(as.Date(odds$match_date), "%Y-%m") == 
                format(as.Date(time.C.df.g[i, 'date']), "%Y-%m") & 
                   odds$home_team == time.C.df.g[i, 'home'] &
                   odds$away_team == time.C.df.g[i, 'away'],])[1] < 1) {
-    betting.odds.pred[i,] <- rep(NA, 4)
+    betting.odds.pred[i,] <- rep(NA, 10)
   } else {
     ind <- which(format(as.Date(odds$match_date), "%Y-%m") == 
                    format(as.Date(time.C.df.g[i, 'date']), "%Y-%m") & 
@@ -502,6 +508,9 @@ for (i in 1:dim(time.C.df.g)[1]) {
     avg.probs <- avg.probs * (1 / sum(avg.probs))
     betting.odds.pred[i, 'avg.prob'] <- 
       avg.probs[(time.C.df.g[i, 'result'] + 0.5) * 2]
+    betting.odds.pred[i, 'avg.p.loss'] <- avg.probs[1]
+    betting.odds.pred[i, 'avg.p.tie'] <- avg.probs[2]
+    betting.odds.pred[i, 'avg.p.win'] <- avg.probs[3]
     
     max.odds <- 
       c(odds[ind,'max_odds_away_win'],
@@ -512,10 +521,17 @@ for (i in 1:dim(time.C.df.g)[1]) {
     max.probs <- max.probs * (1 / sum(max.probs))
     betting.odds.pred[i, 'max.prob'] <- 
       max.probs[(time.C.df.g[i, 'result'] + 0.5) * 2]
+    betting.odds.pred[i, 'max.p.loss'] <- max.probs[1]
+    betting.odds.pred[i, 'max.p.tie'] <- avg.probs[2]
+    betting.odds.pred[i, 'max.p.win'] <- avg.probs[3]
   }
 }
 
 betting.odds.pred <- na.omit(betting.odds.pred)
+avg.probs.temp <- betting.odds.pred[,c('avg.p.loss', 'avg.p.tie', 'avg.p.win')]
+colnames(avg.probs.temp) <- c("p.loss", "p.tie", "p.win")
+max.probs.temp <- betting.odds.pred[,c('max.p.loss', 'max.p.tie', 'max.p.win')]
+colnames(max.probs.temp) <- c("p.loss", "p.tie", "p.win")
 
 # Verify the results of the betting odds strategies in different ways
 check.predictions <- cbind(betting.odds.pred[,c('avg.pred','max.pred')], 
@@ -591,33 +607,36 @@ info.loss <- function(df, coef, zeta) {
 
 elo.b.probs = pred.prob.all(time.C.df, elo.base.result.fit$coefficients, elo.base.result.fit$zeta)
 elo.g.probs = pred.prob.all(time.C.df.g, elo.g.result.fit$coefficients, elo.g.result.fit$zeta)
+unif.probs.temp <- data.frame('p.loss'=rep(1/3, length(unif_outcomes)),
+                              'p.tie'=rep(1/3, length(unif_outcomes)),
+                              'p.win'=rep(1/3, length(unif_outcomes)))
 
 # Calculate loss
+indx <- as.integer(rownames(betting.odds.pred))
 loss.df <- data.frame('method'=c('ELO.b', 'ELO.g', 'AVG', 'MAX', 'UNIF'),
                       'quad.loss'= 
                         c(quad.loss(time.C.df$result, elo.b.probs),
                           quad.loss(time.C.df.g$result, elo.g.probs),
-                          quad.loss(time.C.df$result[as.integer(rownames(betting.odds.pred))], 
-                                    betting.odds.pred$avg.pred),
-                          quad.loss(time.C.df$result[as.integer(rownames(betting.odds.pred))], 
-                                    betting.odds.pred$max.pred),
-                          quad.loss(time.C.df$result, unif_outcomes)),
+                          quad.loss(time.C.df[indx, 'result'], 
+                                    avg.probs.temp),
+                          quad.loss(time.C.df[indx,'result'], 
+                                    max.probs.temp),
+                          quad.loss(time.C.df$result, unif.probs.temp)),
                       'info.loss'=
                         c(info.loss(time.C.df, elo.base.result.fit$coefficients, elo.base.result.fit$zeta),
                           info.loss(time.C.df.g, elo.g.result.fit$coefficients, elo.g.result.fit$zeta),
                           mean(-1 * log2(betting.odds.pred$avg.prob)),
                           mean(-1 * log2(betting.odds.pred$max.prob)),
                           -1 * log2(1/3)))
-indx <- as.integer(rownames(betting.odds.pred))
 loss.df.2 <- data.frame('method'=c('ELO.b', 'ELO.g', 'AVG', 'MAX', 'UNIF'),
                       'quad.loss'= 
-                        c(quad.loss(time.C.df$result[indx], as.double(time.C.pred[indx]) / 2 - 0.5),
-                          quad.loss(time.C.df.g$result[indx], as.double(time.C.g.pred[indx]) / 2 - 0.5),
-                          quad.loss(time.C.df$result[as.integer(rownames(betting.odds.pred))], 
-                                    betting.odds.pred$avg.pred),
-                          quad.loss(time.C.df$result[as.integer(rownames(betting.odds.pred))], 
-                                    betting.odds.pred$max.pred),
-                          quad.loss(time.C.df$result[indx], unif_outcomes[as.integer(rownames(betting.odds.pred))])),
+                        c(quad.loss(time.C.df$result[indx], elo.b.probs[indx,]),
+                          quad.loss(time.C.df.g$result[indx], elo.g.probs[indx,]),
+                          quad.loss(time.C.df[indx, 'result'], 
+                                    avg.probs.temp),
+                          quad.loss(time.C.df[indx,'result'], 
+                                    max.probs.temp),
+                          quad.loss(time.C.df$result[indx], unif.probs.temp[indx,])),
                       'info.loss'=
                         c(info.loss(time.C.df[indx,], elo.base.result.fit$coefficients, elo.base.result.fit$zeta),
                           info.loss(time.C.df.g[indx,], elo.g.result.fit$coefficients, elo.g.result.fit$zeta),
