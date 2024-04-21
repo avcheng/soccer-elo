@@ -601,8 +601,30 @@ quad.loss <- function(y, y.pred) {
   win_l = (true_outcomes[, "win"] - y.pred[, "p.win"])**2
   return(sum(loss_l, tie_l, win_l)/N)
 }
+quad.loss.sd <- function(y, y.pred) {
+  N = length(y)
+  true_outcomes = data.frame(loss=rep(0, N),tie=rep(0, N),win=rep(0, N))
+  for (i in 1:N) {
+    if (y[i]==0) {
+      true_outcomes[i, "loss"] = 1
+    }
+    else if (y[i]==0.5) {
+      true_outcomes[i, "tie"] = 1
+    }
+    else if (y[i]==1) {
+      true_outcomes[i, "win"] = 1
+    }
+  }
+  loss_l = (true_outcomes[,"loss"] - y.pred[, "p.loss"])**2
+  tie_l = (true_outcomes[, "tie"] - y.pred[, "p.tie"])**2
+  win_l = (true_outcomes[, "win"] - y.pred[, "p.win"])**2
+  return(sd(loss_l+tie_l+win_l))
+}
 info.loss <- function(df, coef, zeta) {
    return(mean(-1 * log2(pred.prob(df, coef, zeta))))
+}
+info.loss.sd <- function(df, coef, zeta) {
+  return(sd(-1 * log2(pred.prob(df, coef, zeta))))
 }
 
 elo.b.probs = pred.prob.all(time.C.df, elo.base.result.fit$coefficients, elo.base.result.fit$zeta)
