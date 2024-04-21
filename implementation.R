@@ -986,3 +986,6 @@ for (i in 1:length(range)) {
 hfa.est <- range[which.min(prob.diffs)]
 
 
+# Create table for write-up/presentation
+knitr::kable(loss.df.2, 'latex', vline='')
+
