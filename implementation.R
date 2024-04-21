@@ -682,21 +682,28 @@ for (i in 1:dim(time.C.df.g)[1]) {
     result = sample(c(1, 0.5, 0), 
                     prob = c(home_wins/home_total, home_ties/home_total, home_losses/home_total),
                     size = 1)
+    frequency.probs[i, "p.loss"] = home_losses/home_total
+    frequency.probs[i, "p.tie"] = home_ties/home_total
+    frequency.probs[i, "p.win"] = home_wins/home_total
   } else {
     # if there is no freq history, then just default to uniform
     result = sample(c(1, 0.5, 0), 
                     prob = c(1/3, 1/3, 1/3),
                     size = 1)
+    frequency.probs[i, "p.loss"] = 1/3
+    frequency.probs[i, "p.tie"] = 1/3
+    frequency.probs[i, "p.win"] = 1/3
   }
+  
   time.C.freq.pred[i] = result
   # update frequency table
-  frequency.probs[i, "p.loss"] = home_losses/home_total
-  frequency.probs[i, "p.tie"] = home_ties/home_total
-  frequency.probs[i, "p.win"] = home_wins/home_total
-  
-  frequency$w[frequency$team == home] = home_wins + 1
-  frequency$t[frequency$team == home] = home_ties + 1
-  frequency$l[frequency$team == home] = home_losses + 1
+  if (time.C.df[i,]$result == 1.0) {
+    frequency$w[frequency$team == home] = home_wins + 1
+  } else if (time.C.df[i,]$result == 0.5) { 
+    frequency$t[frequency$team == home] = home_ties + 1
+  } else {
+    frequency$l[frequency$team == home] = home_losses + 1
+  }
   frequency$total[frequency$team == home] = home_total + 1
 }
 
@@ -822,7 +829,7 @@ loss.df <- data.frame('method'=c('ELO.b', 'ELO.g', 'GLICKO', 'AVG', 'MAX', 'UNIF
                           sd(-1 * log2(betting.odds.pred$avg.prob)),
                           sd(-1 * log2(betting.odds.pred$max.prob)),
                           0,
-                          mean(-1 * log2(pred.freq.prob(time.C.df)))))
+                          sd(-1 * log2(pred.freq.prob(time.C.df)))))
 
 loss.df.2 <- data.frame('method'=c('ELO.b', 'ELO.g', 'GLICKO', 'AVG', 'MAX', 'UNIF', 'FREQ'),
                       'quad.loss'= 
@@ -860,7 +867,11 @@ loss.df.2 <- data.frame('method'=c('ELO.b', 'ELO.g', 'GLICKO', 'AVG', 'MAX', 'UN
                           sd(-1 * log2(betting.odds.pred$avg.prob)),
                           sd(-1 * log2(betting.odds.pred$max.prob)),
                           0,
+<<<<<<< Updated upstream
                           mean(-1 * log2(pred.freq.prob(time.C.df)))))
+=======
+                          sd(-1 * log2(pred.freq.prob(time.C.df)))))
+>>>>>>> Stashed changes
 
 ##### Recreate Fig. 3 for our ordered logit model with goal difference
 dummy.diff <- -600:600
