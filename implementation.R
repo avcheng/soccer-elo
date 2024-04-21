@@ -235,16 +235,16 @@ kfac.init <- 30
 
 for (j in 1:length(ls.k.base.elo)) {
   ratings.elo.base <- elo(mls[mls$year==2002,], init=1500, 
-                       kfac=kfac.init, 
-                       gamma=0)
+                          kfac=kfac.init, 
+                          gamma=0)
   ratings.elo.base <- elo(mls[mls$year>2002 & mls$year <= 2017,], 
-                       status=ratings.elo.base$ratings, 
-                       kfac=ls.k.base.elo[j])
+                          status=ratings.elo.base$ratings, 
+                          kfac=ls.k.base.elo[j])
   # Validation on val set
   ll.tmp = 0
   for (val.year in 2018:2022){
     pred <- predict(ratings.elo.base, mls[mls$year==val.year,], 
-                          gamma=0)
+                    gamma=0)
     
     # Account for games with teams that have no ratings yet
     home_NA = (mls[mls$year  == val.year, "home"])[is.na(pred)]
@@ -265,9 +265,9 @@ for (j in 1:length(ls.k.base.elo)) {
             log(1-pred))
     # Update model 
     ratings.elo.base <- elo(mls[mls$year==val.year,], 
-                         init = 1500,
-                         kfac = ls.k.base.elo[j], 
-                         status = ratings.elo.base$ratings)
+                            init = 1500,
+                            kfac = ls.k.base.elo[j], 
+                            status = ratings.elo.base$ratings)
   }
   log.likelihood.k[j] = ll.tmp
 }
@@ -276,37 +276,59 @@ best.ind = which.max(log.likelihood.k)
 best.k.base.elo = ls.k[best.ind]
 best.k.base.elo
 
-# Create heatmaps (using two different methods)
+####### Cross validate for glicko model
 
-acast(log.likelihood.hfa, k0~lambda, value.var="ll")
-m = as.matrix(acast(log.likelihood.hfa, k0~lambda, value.var="ll"))
+predict.fn.glicko <- function(t1, t2, ratings, gamma = 0){
+  rd = ratings[t1, "stderr"]^2+ratings[t2,"stderr"]^2
+  g = 1/sqrt(1+0.00001007252*rd)
+  E = 1/(1+10^(-g * (ratings[t1,"est"]-ratings[t2,"est"] + gamma)/400))
+  return (E)
+}
 
-image(m, xaxt="n", yaxt="n")
-axis(1, at=seq(0,1,length.out=ncol(m)), 
-     labels= paste("lambda", colnames(m)), las= 2 )
-axis(2, at=seq(0,1,length.out=nrow(m)), 
-     labels= paste("k", rownames(m)), las= 2)
+ls.omega = (0:30)*2
+ls.hfa = 0:100
+log.likelihood.glicko = matrix(0, nrow = length(ls.omega), ncol = length(ls.hfa))
 
-im.matrix <- matrix(log.likelihood.hfa$ll, nrow=length(ls.k), 
-                    ncol=length(ls.lambda), byrow=FALSE)
-image(x=unique(log.likelihood.hfa$k0), y=unique(log.likelihood.hfa$lambda),
-      z=im.matrix, col=hcl.colors(300, "Spectral", rev = TRUE), 
+for (j in 1:length(ls.omega)){
+  for (i in 1:length(ls.hfa)) {
+    ratings.glicko = glicko(mls[mls$year==2002 & mls$year <= 2017,], init = c(1500, 350),
+                            cval=ls.omega[j], gamma=ls.hfa[i], rdmax=15000, history = FALSE, sort=FALSE)
+    ll.tmp = 0
+    for (val.year in 2019:2022){
+      pred = predict.fn.glicko(mls[mls$year==val.year,]$home,
+                               mls[mls$year==val.year,]$away,
+                               data.frame("est"=ratings.glicko$ratings[,2], 
+                                          "stderr"=sqrt(ratings.glicko$ratings[,3]^2 + 
+                                                          ls.omega[j]^2),
+                                          row.names = ratings.glicko$ratings[,1]),
+                               gamma = ls.hfa[i])
+      
+      # Log-likelihood
+      ll.tmp <- 
+        ll.tmp+sum(log(pred^mls[mls$year==val.year,]$result*
+                         (1-pred)^(1-mls[mls$year==val.year,]$result)), na.rm = TRUE)
+      # Update the model 
+      ratings.glicko <- glicko(mls[mls$year==val.year,], 
+                               status = ratings.glicko$ratings, 
+                               cval=ls.omega[j], gamma=ls.hfa[i], sort=FALSE)
+    }
+    log.likelihood.glicko[j, i] = ll.tmp
+  }
+}
+
+im.matrix <- log.likelihood.glicko
+image(x=ls.omega, y=ls.hfa,
+      z=log.likelihood.glicko, col=hcl.colors(300, "Spectral", rev = TRUE), 
       ylab=expression(lambda), xlab=expression(k[0]),
       main="Elo with Goal Diff Heatmap")
 
-ll.hfa.truncated <- log.likelihood.hfa[log.likelihood.hfa$k0 < 10 & 
-                                         log.likelihood.hfa$lambda < 1, ]
-im.matrix <- matrix(ll.hfa.truncated$ll, nrow=length(ls.k[ls.k < 10]), 
-                    ncol=length(ls.lambda[ls.lambda < 1]), byrow=FALSE)
-image(x=unique(ll.hfa.truncated$k0), y=unique(ll.hfa.truncated$lambda),
-      z=im.matrix, col=hcl.colors(300, "Spectral", rev = TRUE), 
-      ylab=expression(lambda), xlab=expression(k[0]),
-      main="Elo with Goal Diff Parameter Heatmap")
 
+best.ind = which(log.likelihood.glicko == max(log.likelihood.glicko), arr.ind = TRUE)
+best.omega = ls.omega[best.ind[[1]]]
+best.hfa = ls.hfa[best.ind[[2]]]
 
-ratings.elo = elo.g(mls.g[mls.g$year==2002,], init=1500, k0=best.k, gamma=0)
-ratings.elo = elo.g(mls.g[mls.g$year>2002 & mls.g$year <= 2017,], 
-                    status=ratings.elo$ratings, k0=best.k, lambda=best.lambda)
+ratings.glicko = glicko(mls[mls$year>2002 & mls$year <= 2017,], 
+                        status=ratings.glicko$ratings, cval=best.omega, gamma=best.hfa)
 
 ##### Write the H&A four-step procedure
 
@@ -320,15 +342,16 @@ time.C <- 2011:2015
 # First use k0 = 30, lambda = 0 
 ratings.elo.init <- elo(mls[mls.g$year == 2002,], init=1500, kfac=30)
 ratings.elo.g.init <- elo.g(mls.g[mls.g$year == 2002,], init=1500, k0=30, lambda=0,
-                         gamma=0)
+                            gamma=0)
 
 # Then use optimal parameters to fit ratings
 ratings.elo.A <- elo(mls[mls$year %in% time.A & mls$year > 2002,], init=1500, 
-                        status=ratings.elo.init$ratings, kfac=best.k.base.elo)
+                     status=ratings.elo.init$ratings, kfac=best.k.base.elo)
 ratings.elo.g.A <- elo.g(mls.g[mls.g$year %in% time.A & mls.g$year > 2002,],
-                       status=ratings.elo.g.init$ratings, k0=best.k, 
-                       lambda=best.lambda, gamma=0)
-
+                         status=ratings.elo.g.init$ratings, k0=best.k, 
+                         lambda=best.lambda, gamma=0)
+ratings.glicko.A <- glicko(mls[mls$year %in% time.A & mls$year >= 2002,],
+                           init=c(1500,300), cval=best.omega, gamma=best.hfa)
 
 ### Step 3: Fit ordered logit model on time period B, continue to update elo
 ###         ratings
@@ -341,8 +364,11 @@ time.B.df.g <- mls.g[mls.g$year %in% time.B,]
 ratings.elo.B <- elo(time.B.df, init=1500, status=ratings.elo.A$ratings, 
                      kfac=best.k.base.elo, history=TRUE)
 ratings.elo.g.B <- elo.g(time.B.df.g,
-                       status=ratings.elo.g.A$ratings, k0=best.k, 
-                       lambda=best.lambda, gamma=0)
+                         status=ratings.elo.g.A$ratings, k0=best.k, 
+                         lambda=best.lambda, gamma=0)
+ratings.glicko.B <- glicko(time.B.df,
+                           status=ratings.glicko.A$ratings, cval=best.omega, 
+                           gamma=best.hfa, history = TRUE)
 
 # To compare ratings from each system to help diagnose why ELO.b model 
 # only predicts a home win for every match
@@ -357,6 +383,9 @@ for (i in 1:dim(comp.B.ratings)[1]) {
 # Add ratings at the time to time period df
 ratings.elo.B.history <- ratings.elo.B$history[,,'Rating']
 colnames(ratings.elo.B.history) <- time.B
+
+ratings.glicko.B.history <- ratings.glicko.B$history[,,'Rating']
+colnames(ratings.glicko.B.history) <- time.B
 
 time.B.df$home.rating <- -1e6
 time.B.df$away.rating <- -1e6
@@ -374,10 +403,22 @@ time.B.df.g$away.rating <- -1e6
 for (i in 1:dim(time.B.df.g)[1]) {
   time.B.df.g[i, 'home.rating'] <- 
     ratings.elo.g.B$history[time.B.df.g[i, 'home'], 
-                          as.character(time.B.df.g[i, 'year'])]
+                            as.character(time.B.df.g[i, 'year'])]
   time.B.df.g[i, 'away.rating'] <- 
     ratings.elo.g.B$history[time.B.df.g[i, 'away'], 
-                          as.character(time.B.df.g[i, 'year'])]
+                            as.character(time.B.df.g[i, 'year'])]
+}
+
+
+time.B.df$glicko.home.rating <- -1e6
+time.B.df$glicko.away.rating <- -1e6
+for (i in 1:dim(time.B.df)[1]) {
+  time.B.df[i, 'glicko.home.rating'] <- 
+    ratings.glicko.B.history[time.B.df[i, 'home'], 
+                             as.character(time.B.df[i, 'year'])]
+  time.B.df[i, 'glicko.away.rating'] <- 
+    ratings.glicko.B.history[time.B.df[i, 'away'], 
+                             as.character(time.B.df[i, 'year'])]
 }
 
 # Set gamma, our HFA parameter
@@ -386,6 +427,8 @@ gamma <- 0
 # Create rating.diff column 
 time.B.df$rating.diff <- time.B.df$home.rating + gamma - time.B.df$away.rating 
 time.B.df.g$rating.diff <- time.B.df.g$home.rating + gamma - time.B.df.g$away.rating 
+time.B.df$glicko.rating.diff <- time.B.df$glicko.home.rating + best.hfa - time.B.df$glicko.away.rating 
+
 
 # Fit ordered logit model
 elo.base.result.fit <- polr(as.factor(result) ~ rating.diff, data=time.B.df)
@@ -393,6 +436,9 @@ summary(elo.base.result.fit)
 
 elo.g.result.fit <- polr(as.factor(result) ~ rating.diff, data=time.B.df.g)
 summary(elo.g.result.fit)
+
+glicko.base.result.fit <- polr(as.factor(result) ~ glicko.rating.diff, data=time.B.df)
+summary(glicko.base.result.fit)
 
 ### Step 4: Predict match results for time period C, calculate loss
 
@@ -405,12 +451,21 @@ ratings.elo.C <- elo(time.C.df, init=1500, status=ratings.elo.B$ratings,
                      kfac=best.k.base.elo, history=TRUE)
 
 ratings.elo.g.C <- elo.g(time.C.df.g ,
-                       status=ratings.elo.g.B$ratings, k0=best.k, 
-                       lambda=best.lambda, gamma=0)
+                         status=ratings.elo.g.B$ratings, k0=best.k, 
+                         lambda=best.lambda, gamma=0)
+
+ratings.glicko.C <- glicko(time.C.df,
+                           status=ratings.glicko.B$ratings, cval=best.omega, 
+                           gamma=best.hfa, history = TRUE)
+
 
 # Add ratings at the time to time period df
 ratings.elo.C.history <- ratings.elo.C$history[,,'Rating']
 colnames(ratings.elo.C.history) <- time.C
+
+# Add ratings at the time to time period df
+ratings.glicko.C.history <- ratings.glicko.C$history[,,'Rating']
+colnames(ratings.glicko.C.history) <- time.C
 
 time.C.df$home.rating <- -1e6
 time.C.df$away.rating <- -1e6
@@ -428,10 +483,22 @@ time.C.df.g$away.rating <- -1e6
 for (i in 1:dim(time.C.df.g)[1]) {
   time.C.df.g[i, 'home.rating'] <- 
     ratings.elo.g.C$history[time.C.df.g[i, 'home'], 
-                          as.character(time.C.df.g[i, 'year'])]
+                            as.character(time.C.df.g[i, 'year'])]
   time.C.df.g[i, 'away.rating'] <- 
     ratings.elo.g.C$history[time.C.df.g[i, 'away'], 
-                          as.character(time.C.df.g[i, 'year'])]
+                            as.character(time.C.df.g[i, 'year'])]
+}
+
+
+time.C.df$glicko.home.rating <- -1e6
+time.C.df$glicko.away.rating <- -1e6
+for (i in 1:dim(time.C.df)[1]) {
+  time.C.df[i, 'glicko.home.rating'] <- 
+    ratings.glicko.C.history[time.C.df[i, 'home'], 
+                             as.character(time.C.df[i, 'year'])]
+  time.C.df[i, 'glicko.away.rating'] <- 
+    ratings.glicko.C.history[time.C.df[i, 'away'], 
+                             as.character(time.C.df[i, 'year'])]
 }
 
 # Set gamma, our HFA parameter
@@ -440,10 +507,12 @@ gamma <- 0
 # Create rating.diff column 
 time.C.df$rating.diff <- time.C.df$home.rating - time.C.df$away.rating 
 time.C.df.g$rating.diff <- time.C.df.g$home.rating + gamma - time.C.df.g$away.rating 
+time.C.df$glicko.rating.diff <- time.C.df$glicko.home.rating - time.C.df$glicko.away.rating 
 
 # Predict match results
 time.C.pred <- predict(elo.base.result.fit, newdata=time.C.df)
 time.C.g.pred <- predict(elo.g.result.fit, newdata=time.C.df.g)
+time.C.glicko.pred <- predict(glicko.base.result.fit, newdata=time.C.df)
 
 # Predict match results for AVG and MAX methods
 odds <- read.csv('data/mls_closing_odds.csv')
