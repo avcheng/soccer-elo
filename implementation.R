@@ -540,15 +540,15 @@ dim(check.predictions[check.predictions[,1] != check.predictions[,3],])
 dim(check.predictions[check.predictions[,1] == 0 & check.predictions[,3] == 0,])
 
 # Define function to get model's predicted probability for the true outcome
-pred.prob <- function(df, coef, zeta) {
+pred.prob <- function(df, coef, zeta, column = "rating.diff") {
   mini.fn <- function(row) {
     # print(typeof(row[['rating.diff']]))
     # print(row[['rating.diff']])
-    p.loss <- (1 + exp((-1)*(zeta[[1]] - as.double(row[['rating.diff']]) * 
+    p.loss <- (1 + exp((-1)*(zeta[[1]] - as.double(row[[column]]) * 
                          coef[[1]])))**(-1)
-    p.tie <- (1 + exp((-1)*(zeta[[2]] - as.double(row[['rating.diff']]) * 
+    p.tie <- (1 + exp((-1)*(zeta[[2]] - as.double(row[[column]]) * 
                               coef[[1]])))**(-1) - p.loss
-    p.win <- 1 - (1 + exp((-1)*(zeta[[2]] - as.double(row[['rating.diff']]) * 
+    p.win <- 1 - (1 + exp((-1)*(zeta[[2]] - as.double(row[[column]]) * 
                             coef[[1]])))**(-1)
     if (row['result'] <= 0 ) {
       return(p.loss)
@@ -561,18 +561,73 @@ pred.prob <- function(df, coef, zeta) {
   return(apply(df, 1, mini.fn))
 }
 
-pred.prob.all <- function(df, coef, zeta) {
+pred.prob.all <- function(df, coef, zeta, column = 'rating.diff') {
   res = data.frame(p.loss=numeric(0),p.tie=numeric(0),p.win=numeric(0))
   for (i in 1:dim(df)[1]) {
     row = df[i,]
-    res[i, "p.loss"] <- (1 + exp((-1)*(zeta[[1]] - as.double(row[['rating.diff']]) * 
+    res[i, "p.loss"] <- (1 + exp((-1)*(zeta[[1]] - as.double(row[[column]]) * 
                                coef[[1]])))**(-1)
-    res[i, "p.tie"] <- (1 + exp((-1)*(zeta[[2]] - as.double(row[['rating.diff']]) * 
+    res[i, "p.tie"] <- (1 + exp((-1)*(zeta[[2]] - as.double(row[[column]]) * 
                               coef[[1]])))**(-1) - res[i, "p.loss"]
-    res[i, "p.win"] <- 1 - (1 + exp((-1)*(zeta[[2]] - as.double(row[['rating.diff']]) * 
+    res[i, "p.win"] <- 1 - (1 + exp((-1)*(zeta[[2]] - as.double(row[[column]]) * 
                                   coef[[1]])))**(-1)
   }
   return(res)
+}
+
+frequency = data.frame("team"=unique(mls.regular.season$home),
+                       "w"=0,
+                       "t"=0,
+                       "l"=0,
+                       "total"=0)
+
+time.AB.df.g = mls.g[mls.g$year %in% time.B | mls.g$year %in% time.A,]
+for (i in 1:dim(time.AB.df.g)[1]) {
+  home = time.AB.df.g[i,]$home
+  away = time.AB.df.g[i,]$away
+  if (time.AB.df.g[i,]$result == 1.0) {
+    frequency$w[frequency$team == home] = frequency$w[frequency$team == home] + 1
+    # frequency$l[frequency$team == away] = frequency$w[frequency$team == away] + 1
+  } else if (time.AB.df.g[i,]$result == 0.5) { 
+    frequency$t[frequency$team == home] = frequency$t[frequency$team == home] + 1
+    # frequency$t[frequency$team == away] = frequency$t[frequency$team == away] + 1
+  } else {
+    frequency$l[frequency$team == home] = frequency$w[frequency$team == home] + 1
+    # frequency$w[frequency$team == away] = frequency$l[frequency$team == away] + 1
+  }
+  frequency$total[frequency$team == home] = frequency$total[frequency$team == home] + 1
+  # frequency$total[frequency$team == away] = frequency$total[frequency$team == away] + 1
+  
+}
+time.C.freq.pred = rep(0, dim(time.C.df.g)[1])
+frequency.probs = data.frame(p.loss=numeric(0),p.tie=numeric(0),p.win=numeric(0))
+
+for (i in 1:dim(time.C.df.g)[1]) {
+  home = time.C.df.g[i,]$home
+  home_wins = frequency$w[frequency$team == home]
+  home_ties = frequency$t[frequency$team == home]
+  home_losses = frequency$l[frequency$team == home]
+  home_total = frequency$total[frequency$team == home]
+  if (home_total != 0) {
+    result = sample(c(1, 0.5, 0), 
+                    prob = c(home_wins/home_total, home_ties/home_total, home_losses/home_total),
+                    size = 1)
+  } else {
+    # if there is no freq history, then just default to uniform
+    result = sample(c(1, 0.5, 0), 
+                    prob = c(1/3, 1/3, 1/3),
+                    size = 1)
+  }
+  time.C.freq.pred[i] = result
+  # update frequency table
+  frequency.probs[i, "p.loss"] = home_losses/home_total
+  frequency.probs[i, "p.tie"] = home_ties/home_total
+  frequency.probs[i, "p.win"] = home_wins/home_total
+  
+  frequency$w[frequency$team == home] = home_wins + 1
+  frequency$t[frequency$team == home] = home_ties + 1
+  frequency$l[frequency$team == home] = home_losses + 1
+  frequency$total[frequency$team == home] = home_total + 1
 }
 
 set.seed(143)
@@ -580,6 +635,7 @@ set.seed(143)
 pred.prob(time.C.df, elo.base.result.fit$coefficients, elo.base.result.fit$zeta)
 pred.prob(time.C.df.g, elo.g.result.fit$coefficients, elo.g.result.fit$zeta)
 unif_outcomes = (ceiling(runif(dim(time.C.df)[1], min=-1, max=2)))/2
+pred.prob(time.C.df, glicko.base.result.fit$coefficients, glicko.base.result.fit$zeta, column = "glicko.rating.diff")
 
 # Define loss functions
 quad.loss <- function(y, y.pred) {
@@ -599,7 +655,7 @@ quad.loss <- function(y, y.pred) {
   loss_l = (true_outcomes[,"loss"] - y.pred[, "p.loss"])**2
   tie_l = (true_outcomes[, "tie"] - y.pred[, "p.tie"])**2
   win_l = (true_outcomes[, "win"] - y.pred[, "p.win"])**2
-  return(sum(loss_l, tie_l, win_l)/N)
+  return(sum(loss_l, tie_l, win_l, na.rm = TRUE)/N)
 }
 quad.loss.sd <- function(y, y.pred) {
   N = length(y)
@@ -620,79 +676,121 @@ quad.loss.sd <- function(y, y.pred) {
   win_l = (true_outcomes[, "win"] - y.pred[, "p.win"])**2
   return(sd(loss_l+tie_l+win_l))
 }
-info.loss <- function(df, coef, zeta) {
-   return(mean(-1 * log2(pred.prob(df, coef, zeta))))
+info.loss <- function(df, coef, zeta, column = "rating.diff") {
+   return(mean(-1 * log2(pred.prob(df, coef, zeta, column = column))))
 }
-info.loss.sd <- function(df, coef, zeta) {
-  return(sd(-1 * log2(pred.prob(df, coef, zeta))))
+info.loss.sd <- function(df, coef, zeta, column = "rating.diff") {
+  return(sd(-1 * log2(pred.prob(df, coef, zeta, column = column))))
 }
 
 elo.b.probs = pred.prob.all(time.C.df, elo.base.result.fit$coefficients, elo.base.result.fit$zeta)
 elo.g.probs = pred.prob.all(time.C.df.g, elo.g.result.fit$coefficients, elo.g.result.fit$zeta)
+glicko.probs = pred.prob.all(time.C.df, glicko.base.result.fit$coefficients, glicko.base.result.fit$zeta, column = "glicko.rating.diff")
+
 unif.probs.temp <- data.frame('p.loss'=rep(1/3, length(unif_outcomes)),
                               'p.tie'=rep(1/3, length(unif_outcomes)),
                               'p.win'=rep(1/3, length(unif_outcomes)))
+function(df) {
+  mini.fn <- function(row) {
+    # print(typeof(row[['rating.diff']]))
+    # print(row[['rating.diff']])
+    home = time.C.df.g[i,]$home
+    home_wins = frequency$w[frequency$team == home]
+    home_ties = frequency$t[frequency$team == home]
+    home_losses = frequency$l[frequency$team == home]
+    home_total = frequency$total[frequency$team == home]
+    
+    p.loss <- home_losses / home_total
+    p.tie <- home_ties / home_total
+    p.win <- home_wins / home_total
+    if (row['result'] <= 0 ) {
+      return(p.loss)
+    } 
+    if (row['result'] <= 0.5) {
+      return(p.tie)
+    }
+    return(p.win)
+  }
+  return(apply(df, 1, mini.fn))
+}
+
 
 # Calculate loss
-indx <- as.integer(rownames(betting.odds.pred))
-loss.df <- data.frame('method'=c('ELO.b', 'ELO.g', 'AVG', 'MAX', 'UNIF'),
+loss.df <- data.frame('method'=c('ELO.b', 'ELO.g', 'GLICKO', 'AVG', 'MAX', 'UNIF', 'FREQ'),
                       'quad.loss'= 
                         c(quad.loss(time.C.df$result, elo.b.probs),
                           quad.loss(time.C.df.g$result, elo.g.probs),
+                          quad.loss(time.C.df$result, glicko.probs),
                           quad.loss(time.C.df[indx, 'result'], 
                                     avg.probs.temp),
                           quad.loss(time.C.df[indx,'result'], 
                                     max.probs.temp),
-                          quad.loss(time.C.df$result, unif.probs.temp)),
+                          quad.loss(time.C.df$result, unif.probs.temp),
+                          quad.loss(time.C.df$result, frequency.probs)),
                       'quad.loss.sd'= 
                         c(quad.loss.sd(time.C.df$result, elo.b.probs),
                           quad.loss.sd(time.C.df.g$result, elo.g.probs),
+                          quad.loss.sd(time.C.df$result, glicko.probs),
                           quad.loss.sd(time.C.df[indx, 'result'], 
                                     avg.probs.temp),
                           quad.loss.sd(time.C.df[indx,'result'], 
                                     max.probs.temp),
-                          quad.loss.sd(time.C.df$result, unif.probs.temp)),
+                          quad.loss.sd(time.C.df$result, unif.probs.temp),
+                          quad.loss.sd(time.C.df$result, frequency.probs)),
                       'info.loss'=
                         c(info.loss(time.C.df, elo.base.result.fit$coefficients, elo.base.result.fit$zeta),
                           info.loss(time.C.df.g, elo.g.result.fit$coefficients, elo.g.result.fit$zeta),
+                          info.loss(time.C.df, glicko.base.result.fit$coefficients, glicko.base.result.fit$zeta, column = "glicko.rating.diff"),
                           mean(-1 * log2(betting.odds.pred$avg.prob)),
                           mean(-1 * log2(betting.odds.pred$max.prob)),
-                          -1 * log2(1/3)),
+                          -1 * log2(1/3),
+                          mean(-1 * log2(pred.freq.prob(time.C.df)))),
                       'info.loss.sd'=
                         c(info.loss.sd(time.C.df, elo.base.result.fit$coefficients, elo.base.result.fit$zeta),
                           info.loss.sd(time.C.df.g, elo.g.result.fit$coefficients, elo.g.result.fit$zeta),
+                          info.loss.sd(time.C.df, glicko.base.result.fit$coefficients, glicko.base.result.fit$zeta, column = "glicko.rating.diff"),
                           sd(-1 * log2(betting.odds.pred$avg.prob)),
                           sd(-1 * log2(betting.odds.pred$max.prob)),
-                          0))
-loss.df.2 <- data.frame('method'=c('ELO.b', 'ELO.g', 'AVG', 'MAX', 'UNIF'),
+                          0,
+                          mean(-1 * log2(pred.freq.prob(time.C.df)))))
+
+loss.df.2 <- data.frame('method'=c('ELO.b', 'ELO.g', 'GLICKO', 'AVG', 'MAX', 'UNIF', 'FREQ'),
                       'quad.loss'= 
                         c(quad.loss(time.C.df$result[indx], elo.b.probs[indx,]),
                           quad.loss(time.C.df.g$result[indx], elo.g.probs[indx,]),
+                          quad.loss(time.C.df$result[indx], glicko.probs[indx,]),
                           quad.loss(time.C.df[indx, 'result'], 
                                     avg.probs.temp),
                           quad.loss(time.C.df[indx,'result'], 
                                     max.probs.temp),
-                          quad.loss(time.C.df$result[indx], unif.probs.temp[indx,])),
+                          quad.loss(time.C.df$result[indx], unif.probs.temp[indx,]),
+                          quad.loss(time.C.df$result[indx], time.C.freq.pred[indx])),
                       'quad.loss.sd'= 
                         c(quad.loss.sd(time.C.df$result[indx], elo.b.probs[indx,]),
                           quad.loss.sd(time.C.df.g$result[indx], elo.g.probs[indx,]),
+                          quad.loss.sd(time.C.df$result[indx], glicko.probs[indx,]),
                           quad.loss.sd(time.C.df[indx, 'result'], 
                                        avg.probs.temp),
                           quad.loss.sd(time.C.df[indx,'result'], 
                                        max.probs.temp),
                           quad.loss.sd(time.C.df$result, unif.probs.temp)),
+                          quad.loss.sd(time.C.df$result, pred.freq.prob(time.C.df)),
                       'info.loss'=
                         c(info.loss(time.C.df[indx,], elo.base.result.fit$coefficients, elo.base.result.fit$zeta),
                           info.loss(time.C.df.g[indx,], elo.g.result.fit$coefficients, elo.g.result.fit$zeta),
+                          info.loss(time.C.df[indx,], glicko.base.result.fit$coefficients, glicko.base.result.fit$zeta, column = "glicko.rating.diff"),
                           mean(-1 * log2(betting.odds.pred$avg.prob)),
                           mean(-1 * log2(betting.odds.pred$max.prob)),
-                          -1 * log2(1/3)),
+                          -1 * log2(1/3),
+                          mean(-1 * log2(pred.freq.prob(time.C.df))),
                       'info.loss.sd'=
                         c(info.loss.sd(time.C.df[indx,], elo.base.result.fit$coefficients, elo.base.result.fit$zeta),
                           info.loss.sd(time.C.df.g[indx,], elo.g.result.fit$coefficients, elo.g.result.fit$zeta),
+                          info.loss.sd(time.C.df[indx,], glicko.base.result.fit$coefficients, glicko.base.result.fit$zeta, column = "glicko.rating.diff"),
                           sd(-1 * log2(betting.odds.pred$avg.prob)),
                           sd(-1 * log2(betting.odds.pred$max.prob)),
-                          0))
+                          0,
+                          mean(-1 * log2(pred.freq.prob(time.C.df))))))
 
 ##### Recreate Fig. 3 for our ordered logit model with goal difference
 dummy.diff <- -600:600
