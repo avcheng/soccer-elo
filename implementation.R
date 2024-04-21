@@ -572,6 +572,9 @@ for (i in 1:dim(time.C.df.g)[1]) {
     avg.probs <- avg.probs * (1 / sum(avg.probs))
     betting.odds.pred[i, 'avg.prob'] <- 
       avg.probs[(time.C.df.g[i, 'result'] + 0.5) * 2]
+    betting.odds.pred[i, 'avg.prob.home.loss'] <- avg.probs[1]
+    betting.odds.pred[i, 'avg.prob.draw'] <- avg.probs[2]
+    betting.odds.pred[i, 'avg.prob.home.win'] <- avg.probs[3]
     
     max.odds <- 
       c(odds[ind,'max_odds_away_win'],
@@ -582,6 +585,9 @@ for (i in 1:dim(time.C.df.g)[1]) {
     max.probs <- max.probs * (1 / sum(max.probs))
     betting.odds.pred[i, 'max.prob'] <- 
       max.probs[(time.C.df.g[i, 'result'] + 0.5) * 2]
+    betting.odds.pred[i, 'max.prob.home.loss'] <- max.probs[1]
+    betting.odds.pred[i, 'max.prob.draw'] <- max.probs[2]
+    betting.odds.pred[i, 'max.prob.home.win'] <- max.probs[3]
   }
 }
 
