@@ -1001,6 +1001,8 @@ loss.df.2.rounded$quad.loss <- round(loss.df.2.rounded$quad.loss, 3)
 loss.df.2.rounded$quad.loss.sd <- round(loss.df.2.rounded$quad.loss.sd, 3)
 loss.df.2.rounded$info.loss <- round(loss.df.2.rounded$info.loss, 3)
 loss.df.2.rounded$info.loss.sd <- round(loss.df.2.rounded$info.loss.sd, 3)
+oo <- order(loss.df.2.rounded$quad.loss, decreasing=TRUE)
+loss.df.2.rounded <- loss.df.2.rounded[oo,]
 
 knitr::kable(loss.df, 'latex', vline='')
 knitr::kable(loss.df.2.rounded, 'latex', vline='')
