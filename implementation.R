@@ -98,14 +98,14 @@ mls.regular.season[mls.regular.season$year > 2000,'date_corrected'] <-
 
 ##### Fit basic elo model to compare our own elo function
 
-mls <- mls.regular.season[mls.regular.season$year %in% 2002:2022, 
+mls <- mls.regular.season[mls.regular.season$year %in% 1996:2022, 
                           c('year', 'home', 'away', 'result')]
 
 elo(mls, init=1500, gamma=0, kfac=30, history=FALSE, sort=TRUE)
 
 ##### Write elo.g function for goal difference 
 
-mls.g <- mls.regular.season[mls.regular.season$year %in% 2002:2022,
+mls.g <- mls.regular.season[mls.regular.season$year %in% 1996:2022,
                             c('year', 'date_corrected', 'home', 'away', 
                               'result', 'score_difference')]
 colnames(mls.g) <- c('year', 'date', 'home', 'away', 'result', 'gd')
@@ -188,7 +188,7 @@ plot(elo.g.full$ratings[elo.full$ratings$Player] ~ elo.full$ratings$Rating)
 cor(elo.g.full$ratings[elo.full$ratings$Player], elo.full$ratings$Rating)
 
 ##### Cross validate k0 and lambda for goal difference elo model
-ls.lambda <- 0:31 * 0.16
+ls.lambda <- 1:15 * 0.16
 ls.k <- 0:31 * 1.3
 log.likelihood.hfa <- expand.grid(ls.k, ls.lambda)
 colnames(log.likelihood.hfa) <- c("k0", "lambda")
@@ -196,17 +196,18 @@ log.likelihood.hfa$ll <- rep(-1e6, dim(log.likelihood.hfa)[1])
 kfac.init <- 30
 
 for (j in 1:dim(log.likelihood.hfa)[1]) {
-  ratings.elo <- elo.g(mls.g[mls.g$year==2002,], init=1500, 
-                       k0=kfac.init, 
+  print(log.likelihood.hfa[j, c('k0', 'lambda')])
+  ratings.elo <- elo.g(mls.g[mls.g$year==2001,], init=1500, 
+                       k0=kfac.init, lambda=log.likelihood.hfa[j, 'lambda'],
                        gamma=0)
-  ratings.elo <- elo.g(mls.g[mls.g$year>2002 & mls.g$year <= 2017,], 
+  ratings.elo <- elo.g(mls.g[mls.g$year>2001 & mls.g$year <= 2010,], 
                        status=ratings.elo$ratings, 
                        k0=log.likelihood.hfa[j, 'k0'], 
                        lambda=log.likelihood.hfa[j, 'lambda'])
   
   # Validation on val set
   ll.tmp = 0
-  for (val.year in 2018:2022){
+  for (val.year in 2011:2015){
     pred <- predict.elo.g(ratings.elo$ratings, mls.g[mls.g$year==val.year,], 
                           gamma=0)
     # Log-likelihood
@@ -226,8 +227,10 @@ for (j in 1:dim(log.likelihood.hfa)[1]) {
 best.ind = which.max(log.likelihood.hfa$ll)
 best.k = log.likelihood.hfa[best.ind,]["k0"][[1]]
 best.lambda = log.likelihood.hfa[best.ind,]["lambda"][[1]]
-best.k = 3.9 # so you don't have to re-run cv
+best.k = 3.9 # so you don't have to re-run cv; 2001:2015
+best.k = 5.2 # 2001:2022
 best.lambda = 0.16 # so you don't have to re-run cv
+best.lambda = 0.32 # 2001:2015
 
 ##### Cross validate for BASE ELO
 ls.k.base.elo <- 0:31 * 1.3
@@ -235,15 +238,15 @@ log.likelihood.k <- rep(-1e6, length(ls.k.base.elo))
 kfac.init <- 30
 
 for (j in 1:length(ls.k.base.elo)) {
-  ratings.elo.base <- elo(mls[mls$year==2002,], init=1500, 
+  ratings.elo.base <- elo(mls[mls$year==2001,], init=1500, 
                           kfac=kfac.init, 
                           gamma=0)
-  ratings.elo.base <- elo(mls[mls$year>2002 & mls$year <= 2017,], 
+  ratings.elo.base <- elo(mls[mls$year>2001 & mls$year <= 2010,], 
                           status=ratings.elo.base$ratings, 
                           kfac=ls.k.base.elo[j])
   # Validation on val set
   ll.tmp = 0
-  for (val.year in 2018:2022){
+  for (val.year in 2011:2015){
     pred <- predict(ratings.elo.base, mls[mls$year==val.year,], 
                     gamma=0)
     
@@ -258,7 +261,9 @@ for (j in 1:length(ls.k.base.elo)) {
     home_NA_ratings = sapply(home_NA, replace_NA_rating)
     away_NA_ratings = sapply(away_NA, replace_NA_rating)
     
-    pred[is.na(pred)] = We(home_NA_ratings, away_NA_ratings)
+    if (length(home_NA_ratings) > 0) {
+      pred[is.na(pred)] = We(home_NA_ratings, away_NA_ratings)
+    }
     
     ll.tmp <- ll.tmp +
       sum(mls[mls$year==val.year,]$result * log(pred) +
@@ -275,7 +280,8 @@ for (j in 1:length(ls.k.base.elo)) {
 
 best.ind = which.max(log.likelihood.k)
 best.k.base.elo = ls.k[best.ind]
-best.k.base.elo
+best.k.base.elo = 16.9
+best.k.base.elo = 15.6 # 2001:2015
 
 ####### Cross validate for glicko model
 
@@ -292,10 +298,10 @@ log.likelihood.glicko = matrix(0, nrow = length(ls.omega), ncol = length(ls.hfa)
 
 for (j in 1:length(ls.omega)){
   for (i in 1:length(ls.hfa)) {
-    ratings.glicko = glicko(mls[mls$year==2002 & mls$year <= 2017,], init = c(1500, 350),
+    ratings.glicko = glicko(mls[mls$year==2001 & mls$year <= 2010,], init = c(1500, 350),
                             cval=ls.omega[j], gamma=ls.hfa[i], rdmax=15000, history = FALSE, sort=FALSE)
     ll.tmp = 0
-    for (val.year in 2019:2022){
+    for (val.year in 2011:2015){
       pred = predict.fn.glicko(mls[mls$year==val.year,]$home,
                                mls[mls$year==val.year,]$away,
                                data.frame("est"=ratings.glicko$ratings[,2], 
@@ -330,7 +336,8 @@ best.omega = ls.omega[best.ind[[1]]]
 best.hfa = ls.hfa[best.ind[[2]]]
 # best.omega = 60
 # best.hfa = 100
-ratings.glicko = glicko(mls[mls$year>2002 & mls$year <= 2017,], 
+best.omega = 1242 # 2001:2015
+ratings.glicko = glicko(mls[mls$year>2001 & mls$year <= 2015,], 
                         status=ratings.glicko$ratings, cval=best.omega, gamma=best.hfa)
 
 ##### Write the H&A four-step procedure
@@ -343,17 +350,17 @@ time.C <- 2011:2015
 ### Step 2: Fit initial elo ratings over time period A 
 
 # First use k0 = 30, lambda = 0 
-ratings.elo.init <- elo(mls[mls.g$year == 2002,], init=1500, kfac=30)
-ratings.elo.g.init <- elo.g(mls.g[mls.g$year == 2002,], init=1500, k0=30, lambda=0,
+ratings.elo.init <- elo(mls[mls.g$year == 2001,], init=1500, kfac=30)
+ratings.elo.g.init <- elo.g(mls.g[mls.g$year == 2001,], init=1500, k0=30, lambda=0,
                             gamma=0)
 
 # Then use optimal parameters to fit ratings
-ratings.elo.A <- elo(mls[mls$year %in% time.A & mls$year > 2002,], init=1500, 
+ratings.elo.A <- elo(mls[mls$year %in% time.A & mls$year > 2001,], init=1500, 
                      status=ratings.elo.init$ratings, kfac=best.k.base.elo)
-ratings.elo.g.A <- elo.g(mls.g[mls.g$year %in% time.A & mls.g$year > 2002,],
+ratings.elo.g.A <- elo.g(mls.g[mls.g$year %in% time.A & mls.g$year > 2001,],
                          status=ratings.elo.g.init$ratings, k0=best.k, 
                          lambda=best.lambda, gamma=0)
-ratings.glicko.A <- glicko(mls[mls$year %in% time.A & mls$year >= 2002,],
+ratings.glicko.A <- glicko(mls[mls$year %in% time.A,],
                            init=c(1500,300), cval=best.omega, gamma=best.hfa)
 
 ### Step 3: Fit ordered logit model on time period B, continue to update elo
@@ -916,16 +923,17 @@ dummy.win.df <- data.frame('result'=as.factor(rep(1, length(dummy.diff))),
 dummy.win.df$prob <- pred.prob(dummy.win.df, elo.g.result.fit$coefficients, 
                                elo.g.result.fit$zeta)
 
-# png('pred-prob_vs_rating-diff.png', width=600, height=500)
+png('pred-prob_vs_rating-diff.png', width=600, height=500)
 plot(dummy.loss.df$prob ~ dummy.loss.df$rating.diff, col='red', type='l', 
-     main="Ordered Logit Predicted Probabilities vs. Rating Difference", 
+     main="Ordered Logit Predicted Probabilities vs. Rating Difference,\nwith Goal Difference", 
      ylab="Predicted Probability",
-     xlab="Rating Difference")
+     xlab="Rating Difference\nHFA = 75.29",
+     ylim=c(0,1))
 lines(dummy.draw.df$prob ~ dummy.draw.df$rating.diff, col='purple')
 lines(dummy.win.df$prob ~ dummy.win.df$rating.diff, col='blue')
 legend(200,0.5, c('Home Loss', 'Draw', 'Home Win'), 
        col=c('red', 'purple', 'blue'), lty=1)
-# dev.off()
+dev.off()
 
 ##### Find our estimated 'HFA' effect as H&A did
 approx.effect <- dummy.loss.df[which.min(abs(dummy.loss.df$prob - 
@@ -958,16 +966,17 @@ dummy.win.df <- data.frame('result'=as.factor(rep(1, length(dummy.diff))),
 dummy.win.df$prob <- pred.prob(dummy.win.df, elo.base.result.fit$coefficients, 
                                elo.base.result.fit$zeta)
 
-# png('pred-prob_vs_rating-diff.png', width=600, height=500)
+png('pred-prob_vs_rating-diff_base-elo.png', width=600, height=500)
 plot(dummy.loss.df$prob ~ dummy.loss.df$rating.diff, col='red', type='l', 
-     main="Ordered Logit Predicted Probabilities vs. Rating Difference", 
+     main="Ordered Logit Predicted Probabilities vs. Rating Difference,\nwithout Goal Difference", 
      ylab="Predicted Probability",
-     xlab="Rating Difference")
+     xlab="Rating Difference\nHFA = 75.00", 
+     ylim=c(0,1))
 lines(dummy.draw.df$prob ~ dummy.draw.df$rating.diff, col='purple')
 lines(dummy.win.df$prob ~ dummy.win.df$rating.diff, col='blue')
 legend(200,0.5, c('Home Loss', 'Draw', 'Home Win'), 
        col=c('red', 'purple', 'blue'), lty=1)
-# dev.off()
+dev.off()
 
 ##### Find our estimated 'HFA' effect as H&A did
 approx.effect <- dummy.loss.df[which.min(abs(dummy.loss.df$prob - 
@@ -987,5 +996,12 @@ hfa.est <- range[which.min(prob.diffs)]
 
 
 # Create table for write-up/presentation
-knitr::kable(loss.df.2, 'latex', vline='')
+loss.df.2.rounded <- loss.df.2
+loss.df.2.rounded$quad.loss <- round(loss.df.2.rounded$quad.loss, 3)
+loss.df.2.rounded$quad.loss.sd <- round(loss.df.2.rounded$quad.loss.sd, 3)
+loss.df.2.rounded$info.loss <- round(loss.df.2.rounded$info.loss, 3)
+loss.df.2.rounded$info.loss.sd <- round(loss.df.2.rounded$info.loss.sd, 3)
+
+knitr::kable(loss.df, 'latex', vline='')
+knitr::kable(loss.df.2.rounded, 'latex', vline='')
 
