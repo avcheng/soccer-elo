@@ -3,7 +3,7 @@ library(reshape2)
 library(MASS) # required for ordinal logistic regression
 
 ##### Data Wrangling
-mls.original <- read.csv('soccer-elo/data/mls2001-2021.csv')
+mls.original <- read.csv('data/mls2001-2021.csv')
 mls.big <- mls.original[,c('home', 'away', 'date', 'year', 'venue', 'league', 
                            'game_status', 'shootout', 'home_score', 
                            'away_score', 'part_of_competition')]
