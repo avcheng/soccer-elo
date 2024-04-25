@@ -95,14 +95,6 @@ mls.regular.season[mls.regular.season$year > 2000,'date_corrected'] <-
   as.Date(mls.regular.season[mls.regular.season$year > 2000, 'date'],
           format="%A, %B %d, %Y")
 
-
-##### Fit basic elo model to compare our own elo function
-
-mls <- mls.regular.season[mls.regular.season$year %in% 1996:2022, 
-                          c('year', 'home', 'away', 'result')]
-
-elo(mls, init=1500, gamma=0, kfac=30, history=FALSE, sort=TRUE)
-
 ##### Write elo.g function for goal difference 
 
 mls.g <- mls.regular.season[mls.regular.season$year %in% 1996:2022,
@@ -118,9 +110,9 @@ We <- function(r1, r2, gamma=0) {
 elo.g <- function(df, init=1500, status=NULL, k0=30, lambda=0, gamma=0) {
   # Set up matrix of ratings, with one for each date
   teams <- unique(mls.regular.season$home)
-  years <- as.character(unique(df$year))
-  history <- matrix(data=NA, nrow=length(teams), ncol=length(years)+1)
-  dimnames(history) <- list(teams, c('init', years))
+  dates <- unique(df$date)
+  history <- matrix(data=NA, nrow=length(teams), ncol=length(dates)+1)
+  dimnames(history) <- list(teams, c('init', as.character(dates)))
   
   # Set initial ratings
   ratings <- numeric(0)
@@ -137,28 +129,20 @@ elo.g <- function(df, init=1500, status=NULL, k0=30, lambda=0, gamma=0) {
     names(ratings) <- teams
   }
   
-  # Loop through games, and update ratings
-  for (y in min(years):max(years)) {
-    temp_ratings = ratings
-    year_df = df[df$year == as.integer(y),]
-    for (i in 1:dim(year_df)[1]) {
-      temp_ratings[year_df[i, 'home']] <- temp_ratings[year_df[i, 'home']] + 
-        k0*(1 + abs(year_df[i, 'gd']))**lambda * 
-        (year_df[i, 'result'] - 
-        We(ratings[year_df[i, 'home']], ratings[year_df[i, 'away']], 
-                              gamma=gamma))
-      
-      temp_ratings[year_df[i, 'away']] <- temp_ratings[year_df[i, 'away']] + 
-        k0*(1 + abs(year_df[i, 'gd']))**lambda * 
-        ((1 - year_df[i, 'result']) - We(ratings[year_df[i, 'away']], 
-                                    ratings[year_df[i, 'home']], gamma=gamma))
-    }
-    # print(temp_ratings)
-    # print(ratings)
-    ratings = temp_ratings
-    # history[df$Player, as.character(df[i, 'year'])] <- ratings
-    # history[df$Player, as.character(df[i, 'year'])] <- ratings
-    history[,as.character(y)] <- ratings
+  for (row in 1:dim(df)[1]) {
+    temp_ratings <- ratings
+    temp_ratings[df[row,'home']] <- temp_ratings[df[row,'home']] + 
+      k0*(1 + abs(df[i, 'gd']))**lambda * 
+      (df[row,'result'] - We(ratings[df[row,'home']], ratings[df[row,'away']],
+                             gamma=gamma))
+    temp_ratings[df[row,'away']] <- temp_ratings[df[row,'away']] + 
+      k0*(1 + abs(df[i, 'gd']))**lambda * 
+      ((1 - df[row,'result']) - We(ratings[df[row,'away']], ratings[df[row,'home']],
+                                   gamma=gamma))
+    
+    ratings <- temp_ratings
+    history[df[row,'home'], as.character(df[row, 'date'])] <- ratings[df[row,'home']]
+    history[df[row,'away'], as.character(df[row, 'date'])] <- ratings[df[row,'away']]
   }
   
   return(list('ratings'=ratings, 'history'=history))
@@ -172,20 +156,6 @@ predict.elo.g <- function(ratings, df, gamma=0) {
   }
   return (apply(df, 1, row.We))
 }
-
-##### Compare our function to elo & glicko in PlayerRatings package
-mls.mini <- mls[1:50,]
-mls.g.mini <- mls.g[1:50,]
-elo.mini <- elo(mls.mini, init=1500, gamma=0, kfac=30)
-glicko.mini <- glicko(mls.mini, init = c(1500, 300), rdmax=15000, history = FALSE, sort=FALSE)
-elo.g.mini <- elo.g(mls.g.mini)
-
-##### Check correspondence between ratings from PlayerRatings package 
-##### and our own implementation; checks now show ours is working properly
-elo.g.full <- elo.g(mls.g, status=NULL, k0=30, lambda=0, gamma=0)
-elo.full <- elo(mls, init=1500, gamma=0, kfac=30, history=FALSE, sort=FALSE)
-plot(elo.g.full$ratings[elo.full$ratings$Player] ~ elo.full$ratings$Rating)
-cor(elo.g.full$ratings[elo.full$ratings$Player], elo.full$ratings$Rating)
 
 ##### Cross validate k0 and lambda for goal difference elo model
 ls.lambda <- 1:15 * 0.16
@@ -231,6 +201,11 @@ best.k = 3.9 # so you don't have to re-run cv; 2001:2015
 best.k = 5.2 # 2001:2022
 best.lambda = 0.16 # so you don't have to re-run cv
 best.lambda = 0.32 # 2001:2015
+best.k = 2.6 # 04/25
+best.lambda = 0.96. # 04/25
+
+best.k <- 10
+best.lambda <- 1.875
 
 ##### Cross validate for BASE ELO
 ls.k.base.elo <- 0:31 * 1.3
@@ -238,41 +213,25 @@ log.likelihood.k <- rep(-1e6, length(ls.k.base.elo))
 kfac.init <- 30
 
 for (j in 1:length(ls.k.base.elo)) {
-  ratings.elo.base <- elo(mls[mls$year==2001,], init=1500, 
-                          kfac=kfac.init, 
-                          gamma=0)
-  ratings.elo.base <- elo(mls[mls$year>2001 & mls$year <= 2010,], 
+  ratings.elo.base <- elo.g(mls.g[mls.g$year==2001,], init=1500, 
+                          k0=kfac.init)
+  ratings.elo.base <- elo.g(mls.g[mls$year>2001 & mls$year <= 2010,], 
                           status=ratings.elo.base$ratings, 
-                          kfac=ls.k.base.elo[j])
+                          k0=ls.k.base.elo[j])
   # Validation on val set
   ll.tmp = 0
   for (val.year in 2011:2015){
-    pred <- predict(ratings.elo.base, mls[mls$year==val.year,], 
-                    gamma=0)
-    
-    # Account for games with teams that have no ratings yet
-    home_NA = (mls[mls$year  == val.year, "home"])[is.na(pred)]
-    away_NA = (mls[mls$year  == val.year, "away"])[is.na(pred)]
-    
-    replace_NA_rating <- function(x)
-      ifelse(x %in% unique(ratings.elo.base$ratings$Player), 
-             ratings.elo.base$ratings$Rating[which(ratings.elo.base$ratings$Player == x)], 1500)
-    
-    home_NA_ratings = sapply(home_NA, replace_NA_rating)
-    away_NA_ratings = sapply(away_NA, replace_NA_rating)
-    
-    if (length(home_NA_ratings) > 0) {
-      pred[is.na(pred)] = We(home_NA_ratings, away_NA_ratings)
-    }
+    pred <- predict.elo.g(ratings.elo.base$ratings, 
+                          mls.g[mls.g$year==val.year,])
     
     ll.tmp <- ll.tmp +
-      sum(mls[mls$year==val.year,]$result * log(pred) +
+      sum(mls.g[mls.g$year==val.year,]$result * log(pred) +
             (1 - mls[mls$year==val.year,]$result) * 
             log(1-pred))
     # Update model 
-    ratings.elo.base <- elo(mls[mls$year==val.year,], 
+    ratings.elo.base <- elo.g(mls.g[mls.g$year==val.year,], 
                             init = 1500,
-                            kfac = ls.k.base.elo[j], 
+                            k0 = ls.k.base.elo[j], 
                             status = ratings.elo.base$ratings)
   }
   log.likelihood.k[j] = ll.tmp
@@ -282,6 +241,9 @@ best.ind = which.max(log.likelihood.k)
 best.k.base.elo = ls.k[best.ind]
 best.k.base.elo = 16.9
 best.k.base.elo = 15.6 # 2001:2015
+bset.k.base.elo = 5.2 # 04/25
+
+best.k.base.elo <- 11/15 * 40
 
 ####### Cross validate for glicko model
 
@@ -337,8 +299,8 @@ best.hfa = ls.hfa[best.ind[[2]]]
 # best.omega = 60
 # best.hfa = 100
 best.omega = 1242 # 2001:2015
-ratings.glicko = glicko(mls[mls$year>2001 & mls$year <= 2015,], 
-                        status=ratings.glicko$ratings, cval=best.omega, gamma=best.hfa)
+
+best.omega <- 60
 
 ##### Write the H&A four-step procedure
 
@@ -350,13 +312,13 @@ time.C <- 2011:2015
 ### Step 2: Fit initial elo ratings over time period A 
 
 # First use k0 = 30, lambda = 0 
-ratings.elo.init <- elo(mls[mls.g$year == 2001,], init=1500, kfac=30)
-ratings.elo.g.init <- elo.g(mls.g[mls.g$year == 2001,], init=1500, k0=30, lambda=0,
-                            gamma=0)
+ratings.elo.init <- elo.g(mls.g[mls.g$year == 2001,], init=1500, k0=30)
+ratings.elo.g.init <- elo.g(mls.g[mls.g$year == 2001,], init=1500, k0=30, 
+                            lambda=best.lambda)
 
 # Then use optimal parameters to fit ratings
-ratings.elo.A <- elo(mls[mls$year %in% time.A & mls$year > 2001,], init=1500, 
-                     status=ratings.elo.init$ratings, kfac=best.k.base.elo)
+ratings.elo.A <- elo.g(mls.g[mls.g$year %in% time.A & mls$year > 2001,], init=1500, 
+                     status=ratings.elo.init$ratings, k0=best.k.base.elo)
 ratings.elo.g.A <- elo.g(mls.g[mls.g$year %in% time.A & mls.g$year > 2001,],
                          status=ratings.elo.g.init$ratings, k0=best.k, 
                          lambda=best.lambda, gamma=0)
@@ -367,56 +329,51 @@ ratings.glicko.A <- glicko(mls[mls$year %in% time.A,],
 ###         ratings
 
 # Create df for this time period
-time.B.df <- mls[mls$year %in% time.B,]
+time.B.df <- mls.g[mls.g$year %in% time.B,]
 time.B.df.g <- mls.g[mls.g$year %in% time.B,]
 
 # Generate ratings for this time period
-ratings.elo.B <- elo(time.B.df, init=1500, status=ratings.elo.A$ratings, 
-                     kfac=best.k.base.elo, history=TRUE)
+ratings.elo.B <- elo.g(time.B.df.g, init=1500, status=ratings.elo.A$ratings, 
+                     k0=best.k.base.elo)
 ratings.elo.g.B <- elo.g(time.B.df.g,
                          status=ratings.elo.g.A$ratings, k0=best.k, 
                          lambda=best.lambda, gamma=0)
-ratings.glicko.B <- glicko(time.B.df,
+ratings.glicko.B <- glicko(time.B.df[,c('year', 'home', 'away', 'result')],
                            status=ratings.glicko.A$ratings, cval=best.omega, 
                            gamma=best.hfa, history = TRUE)
 
-# To compare ratings from each system to help diagnose why ELO.b model 
-# only predicts a home win for every match
-comp.B.ratings <- data.frame('Team'=ratings.elo.B$ratings$Player, 
-                             'ELO.b'=ratings.elo.B$ratings$Rating)
-comp.B.ratings$ELO.g <- -1e6
-for (i in 1:dim(comp.B.ratings)[1]) {
-  comp.B.ratings[i, 'ELO.g'] <- 
-    ratings.elo.g.B$ratings[comp.B.ratings[i, 'Team']]
-}
-
 # Add ratings at the time to time period df
-ratings.elo.B.history <- ratings.elo.B$history[,,'Rating']
-colnames(ratings.elo.B.history) <- time.B
-
 ratings.glicko.B.history <- ratings.glicko.B$history[,,'Rating']
 colnames(ratings.glicko.B.history) <- time.B
 
 time.B.df$home.rating <- -1e6
 time.B.df$away.rating <- -1e6
 for (i in 1:dim(time.B.df)[1]) {
-  time.B.df[i, 'home.rating'] <- 
-    ratings.elo.B.history[time.B.df[i, 'home'], 
-                          as.character(time.B.df[i, 'year'])]
-  time.B.df[i, 'away.rating'] <- 
-    ratings.elo.B.history[time.B.df[i, 'away'], 
-                          as.character(time.B.df[i, 'year'])]
+  if (sum(as.Date(colnames(ratings.elo.B$history)[2:dim(ratings.elo.B$history)[2]], 
+                  format="%Y-%m-%d") < time.B.df[i, 'date']) < 1) {
+    time.B.df[i, 'home.rating'] <- ratings.elo.B$history[time.B.df[i,'home'],1]
+    time.B.df[i, 'away.rating'] <- ratings.elo.B$history[time.B.df[i,'away'],1]
+  } else {
+    before.df <- ratings.elo.B$history[,as.Date(colnames(ratings.elo.B$history)[2:dim(ratings.elo.B$history)[2]], 
+                                                format="%Y-%m-%d") < time.B.df[i, 'date']]
+    time.B.df[i, 'home.rating'] <- tail(na.omit(before.df[time.B.df[i,'home'],]), n=1)
+    time.B.df[i, 'away.rating'] <- tail(na.omit(before.df[time.B.df[i,'away'],]), n=1)
+  }
 }
 
 time.B.df.g$home.rating <- -1e6
 time.B.df.g$away.rating <- -1e6
 for (i in 1:dim(time.B.df.g)[1]) {
-  time.B.df.g[i, 'home.rating'] <- 
-    ratings.elo.g.B$history[time.B.df.g[i, 'home'], 
-                            as.character(time.B.df.g[i, 'year'])]
-  time.B.df.g[i, 'away.rating'] <- 
-    ratings.elo.g.B$history[time.B.df.g[i, 'away'], 
-                            as.character(time.B.df.g[i, 'year'])]
+  if (sum(as.Date(colnames(ratings.elo.g.B$history)[2:dim(ratings.elo.g.B$history)[2]], 
+                  format="%Y-%m-%d") < time.B.df.g[i, 'date']) < 1) {
+    time.B.df.g[i, 'home.rating'] <- ratings.elo.g.B$history[time.B.df.g[i,'home'],1]
+    time.B.df.g[i, 'away.rating'] <- ratings.elo.g.B$history[time.B.df.g[i,'away'],1]
+  } else {
+    before.df <- ratings.elo.g.B$history[,as.Date(colnames(ratings.elo.g.B$history)[2:dim(ratings.elo.g.B$history)[2]], 
+                                                format="%Y-%m-%d") < time.B.df.g[i, 'date']]
+    time.B.df.g[i, 'home.rating'] <- tail(na.omit(before.df[time.B.df.g[i,'home'],]), n=1)
+    time.B.df.g[i, 'away.rating'] <- tail(na.omit(before.df[time.B.df.g[i,'away'],]), n=1)
+  }
 }
 
 
@@ -429,18 +386,6 @@ for (i in 1:dim(time.B.df)[1]) {
   time.B.df[i, 'glicko.away.rating'] <- 
     ratings.glicko.B.history[time.B.df[i, 'away'], 
                              as.character(time.B.df[i, 'year'])]
-}
-
-
-time.B.df$glicko.home.rating <- -1e6
-time.B.df$glicko.away.rating <- -1e6
-for (i in 1:dim(time.B.df)[1]) {
-  time.B.df[i, 'glicko.home.rating'] <- 
-    ratings.glicko.B.history[time.B.df[i, 'home'], 
-                          as.character(time.B.df[i, 'year'])]
-  time.B.df[i, 'glicko.away.rating'] <- 
-    ratings.glicko.B.history[time.B.df[i, 'away'], 
-                          as.character(time.B.df[i, 'year'])]
 }
 
 # Set gamma, our HFA parameter
@@ -450,7 +395,6 @@ gamma <- 0
 time.B.df$rating.diff <- time.B.df$home.rating + gamma - time.B.df$away.rating 
 time.B.df.g$rating.diff <- time.B.df.g$home.rating + gamma - time.B.df.g$away.rating 
 time.B.df$glicko.rating.diff <- time.B.df$glicko.home.rating + best.hfa - time.B.df$glicko.away.rating 
-
 
 # Fit ordered logit model
 elo.base.result.fit <- polr(as.factor(result) ~ rating.diff, data=time.B.df)
@@ -465,30 +409,21 @@ summary(glicko.base.result.fit)
 ### Step 4: Predict match results for time period C, calculate loss
 
 # Create df for this time period
-time.C.df <- mls[mls$year %in% time.C,]
+time.C.df <- mls.g[mls.g$year %in% time.C,]
 time.C.df.g <- mls.g[mls.g$year %in% time.C,]
 
 # Generate ratings for this time period
-ratings.elo.C <- elo(time.C.df, init=1500, status=ratings.elo.B$ratings, 
-                     kfac=best.k.base.elo, history=TRUE)
+ratings.elo.C <- elo.g(time.C.df, init=1500, status=ratings.elo.B$ratings, 
+                       k0=best.k.base.elo)
 
 ratings.elo.g.C <- elo.g(time.C.df.g ,
                          status=ratings.elo.g.B$ratings, k0=best.k, 
                          lambda=best.lambda, gamma=0)
 
-ratings.glicko.C <- glicko(time.C.df,
+ratings.glicko.C <- glicko(time.C.df[,c('year', 'home', 'away', 'result')],
                            status=ratings.glicko.B$ratings, cval=best.omega, 
                            gamma=best.hfa, history = TRUE)
 
-
-ratings.glicko.C <- glicko(time.C.df,
-                         status=ratings.glicko.B$ratings, cval=best.omega, 
-                         gamma=best.hfa, history = TRUE)
-
-
-# Add ratings at the time to time period df
-ratings.elo.C.history <- ratings.elo.C$history[,,'Rating']
-colnames(ratings.elo.C.history) <- time.C
 
 # Add ratings at the time to time period df
 ratings.glicko.C.history <- ratings.glicko.C$history[,,'Rating']
@@ -497,23 +432,31 @@ colnames(ratings.glicko.C.history) <- time.C
 time.C.df$home.rating <- -1e6
 time.C.df$away.rating <- -1e6
 for (i in 1:dim(time.C.df)[1]) {
-  time.C.df[i, 'home.rating'] <- 
-    ratings.elo.C.history[time.C.df[i, 'home'], 
-                          as.character(time.C.df[i, 'year'])]
-  time.C.df[i, 'away.rating'] <- 
-    ratings.elo.C.history[time.C.df[i, 'away'], 
-                          as.character(time.C.df[i, 'year'])]
+  if (sum(as.Date(colnames(ratings.elo.C$history)[2:dim(ratings.elo.C$history)[2]], 
+                  format="%Y-%m-%d") < time.C.df[i, 'date']) < 1) {
+    time.C.df[i, 'home.rating'] <- ratings.elo.B$history[time.C.df[i,'home'],1]
+    time.C.df[i, 'away.rating'] <- ratings.elo.B$history[time.C.df[i,'away'],1]
+  } else {
+    before.df <- ratings.elo.C$history[,as.Date(colnames(ratings.elo.C$history)[2:dim(ratings.elo.C$history)[2]], 
+                                                format="%Y-%m-%d") < time.C.df[i, 'date']]
+    time.C.df[i, 'home.rating'] <- tail(na.omit(before.df[time.C.df[i,'home'],]), n=1)
+    time.C.df[i, 'away.rating'] <- tail(na.omit(before.df[time.C.df[i,'away'],]), n=1)
+  }
 }
 
 time.C.df.g$home.rating <- -1e6
 time.C.df.g$away.rating <- -1e6
-for (i in 1:dim(time.C.df.g)[1]) {
-  time.C.df.g[i, 'home.rating'] <- 
-    ratings.elo.g.C$history[time.C.df.g[i, 'home'], 
-                            as.character(time.C.df.g[i, 'year'])]
-  time.C.df.g[i, 'away.rating'] <- 
-    ratings.elo.g.C$history[time.C.df.g[i, 'away'], 
-                            as.character(time.C.df.g[i, 'year'])]
+for (i in 1:dim(time.B.df.g)[1]) {
+  if (sum(as.Date(colnames(ratings.elo.g.C$history)[2:dim(ratings.elo.g.C$history)[2]], 
+                  format="%Y-%m-%d") < time.C.df.g[i, 'date']) < 1) {
+    time.C.df.g[i, 'home.rating'] <- ratings.elo.g.C$history[time.C.df.g[i,'home'],1]
+    time.C.df.g[i, 'away.rating'] <- ratings.elo.g.C$history[time.C.df.g[i,'away'],1]
+  } else {
+    before.df <- ratings.elo.g.C$history[,as.Date(colnames(ratings.elo.g.C$history)[2:dim(ratings.elo.g.C$history)[2]], 
+                                                  format="%Y-%m-%d") < time.C.df.g[i, 'date']]
+    time.C.df.g[i, 'home.rating'] <- tail(na.omit(before.df[time.C.df.g[i,'home'],]), n=1)
+    time.C.df.g[i, 'away.rating'] <- tail(na.omit(before.df[time.C.df.g[i,'away'],]), n=1)
+  }
 }
 
 
@@ -526,18 +469,6 @@ for (i in 1:dim(time.C.df)[1]) {
   time.C.df[i, 'glicko.away.rating'] <- 
     ratings.glicko.C.history[time.C.df[i, 'away'], 
                              as.character(time.C.df[i, 'year'])]
-}
-
-
-time.C.df$glicko.home.rating <- -1e6
-time.C.df$glicko.away.rating <- -1e6
-for (i in 1:dim(time.C.df)[1]) {
-  time.C.df[i, 'glicko.home.rating'] <- 
-    ratings.glicko.C.history[time.C.df[i, 'home'], 
-                          as.character(time.C.df[i, 'year'])]
-  time.C.df[i, 'glicko.away.rating'] <- 
-    ratings.glicko.C.history[time.C.df[i, 'away'], 
-                          as.character(time.C.df[i, 'year'])]
 }
 
 # Set gamma, our HFA parameter
@@ -640,12 +571,6 @@ avg.probs.temp <- betting.odds.pred[,c('avg.p.loss', 'avg.p.tie', 'avg.p.win')]
 colnames(avg.probs.temp) <- c("p.loss", "p.tie", "p.win")
 max.probs.temp <- betting.odds.pred[,c('max.p.loss', 'max.p.tie', 'max.p.win')]
 colnames(max.probs.temp) <- c("p.loss", "p.tie", "p.win")
-
-# Verify the results of the betting odds strategies in different ways
-check.predictions <- cbind(betting.odds.pred[,c('avg.pred','max.pred')], 
-                        time.C.g.pred[as.integer(rownames(betting.odds.pred))])
-dim(check.predictions[check.predictions[,1] != check.predictions[,3],])
-dim(check.predictions[check.predictions[,1] == 0 & check.predictions[,3] == 0,])
 
 # Define function to get model's predicted probability for the true outcome
 pred.prob <- function(df, coef, zeta, column = "rating.diff") {
