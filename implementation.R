@@ -157,149 +157,14 @@ predict.elo.g <- function(ratings, df, gamma=0) {
   return (apply(df, 1, row.We))
 }
 
-##### Cross validate k0 and lambda for goal difference elo model
-ls.lambda <- 1:15 * 0.16
-ls.k <- 0:31 * 1.3
-log.likelihood.hfa <- expand.grid(ls.k, ls.lambda)
-colnames(log.likelihood.hfa) <- c("k0", "lambda")
-log.likelihood.hfa$ll <- rep(-1e6, dim(log.likelihood.hfa)[1])
-kfac.init <- 30
-
-for (j in 1:dim(log.likelihood.hfa)[1]) {
-  print(log.likelihood.hfa[j, c('k0', 'lambda')])
-  ratings.elo <- elo.g(mls.g[mls.g$year==2001,], init=1500, 
-                       k0=kfac.init, lambda=log.likelihood.hfa[j, 'lambda'],
-                       gamma=0)
-  ratings.elo <- elo.g(mls.g[mls.g$year>2001 & mls.g$year <= 2010,], 
-                       status=ratings.elo$ratings, 
-                       k0=log.likelihood.hfa[j, 'k0'], 
-                       lambda=log.likelihood.hfa[j, 'lambda'])
-  
-  # Validation on val set
-  ll.tmp = 0
-  for (val.year in 2011:2015){
-    pred <- predict.elo.g(ratings.elo$ratings, mls.g[mls.g$year==val.year,], 
-                          gamma=0)
-    # Log-likelihood
-    ll.tmp <- ll.tmp +
-      sum(mls.g[mls.g$year==val.year,]$result * log(pred) +
-            (1 - mls.g[mls.g$year==val.year,]$result) * 
-            log(1-pred))
-    # Update model 
-    ratings.elo <- elo.g(mls.g[mls.g$year==val.year,], 
-                         k0 = log.likelihood.hfa[j, 'k0'], 
-                         status = ratings.elo$ratings, 
-                         lambda=log.likelihood.hfa[j, 'lambda'])
-  }
-  log.likelihood.hfa[j, 'll'] = ll.tmp
-}
-
-best.ind = which.max(log.likelihood.hfa$ll)
-best.k = log.likelihood.hfa[best.ind,]["k0"][[1]]
-best.lambda = log.likelihood.hfa[best.ind,]["lambda"][[1]]
-best.k = 3.9 # so you don't have to re-run cv; 2001:2015
-best.k = 5.2 # 2001:2022
-best.lambda = 0.16 # so you don't have to re-run cv
-best.lambda = 0.32 # 2001:2015
-best.k = 2.6 # 04/25
-best.lambda = 0.96. # 04/25
-
+##### Set k0 and lambda for goal difference elo model
 best.k <- 10
 best.lambda <- 1.875
 
-##### Cross validate for BASE ELO
-ls.k.base.elo <- 0:31 * 1.3
-log.likelihood.k <- rep(-1e6, length(ls.k.base.elo))
-kfac.init <- 30
-
-for (j in 1:length(ls.k.base.elo)) {
-  ratings.elo.base <- elo.g(mls.g[mls.g$year==2001,], init=1500, 
-                          k0=kfac.init)
-  ratings.elo.base <- elo.g(mls.g[mls$year>2001 & mls$year <= 2010,], 
-                          status=ratings.elo.base$ratings, 
-                          k0=ls.k.base.elo[j])
-  # Validation on val set
-  ll.tmp = 0
-  for (val.year in 2011:2015){
-    pred <- predict.elo.g(ratings.elo.base$ratings, 
-                          mls.g[mls.g$year==val.year,])
-    
-    ll.tmp <- ll.tmp +
-      sum(mls.g[mls.g$year==val.year,]$result * log(pred) +
-            (1 - mls[mls$year==val.year,]$result) * 
-            log(1-pred))
-    # Update model 
-    ratings.elo.base <- elo.g(mls.g[mls.g$year==val.year,], 
-                            init = 1500,
-                            k0 = ls.k.base.elo[j], 
-                            status = ratings.elo.base$ratings)
-  }
-  log.likelihood.k[j] = ll.tmp
-}
-
-best.ind = which.max(log.likelihood.k)
-best.k.base.elo = ls.k[best.ind]
-best.k.base.elo = 16.9
-best.k.base.elo = 15.6 # 2001:2015
-bset.k.base.elo = 5.2 # 04/25
-
+##### Set K for base elo model
 best.k.base.elo <- 11/15 * 40
 
-####### Cross validate for glicko model
-
-predict.fn.glicko <- function(t1, t2, ratings, gamma = 0){
-  rd = ratings[t1, "stderr"]^2+ratings[t2,"stderr"]^2
-  g = 1/sqrt(1+0.00001007252*rd)
-  E = 1/(1+10^(-g * (ratings[t1,"est"]-ratings[t2,"est"] + gamma)/400))
-  return (E)
-}
-
-ls.omega = (0:1000) * 2 
-ls.hfa = 0
-log.likelihood.glicko = matrix(0, nrow = length(ls.omega), ncol = length(ls.hfa))
-
-for (j in 1:length(ls.omega)){
-  for (i in 1:length(ls.hfa)) {
-    ratings.glicko = glicko(mls[mls$year==2001 & mls$year <= 2010,], init = c(1500, 350),
-                            cval=ls.omega[j], gamma=ls.hfa[i], rdmax=15000, history = FALSE, sort=FALSE)
-    ll.tmp = 0
-    for (val.year in 2011:2015){
-      pred = predict.fn.glicko(mls[mls$year==val.year,]$home,
-                               mls[mls$year==val.year,]$away,
-                               data.frame("est"=ratings.glicko$ratings[,2], 
-                                          "stderr"=sqrt(ratings.glicko$ratings[,3]^2 + 
-                                                          ls.omega[j]^2),
-                                          row.names = ratings.glicko$ratings[,1]),
-                               gamma = ls.hfa[i])
-      
-
-      # Log-likelihood
-      ll.tmp <- 
-        ll.tmp+sum(log(pred^mls[mls$year==val.year,]$result*
-                         (1-pred)^(1-mls[mls$year==val.year,]$result)), na.rm = TRUE)
-      # Update the model 
-      ratings.glicko <- glicko(mls[mls$year==val.year,], 
-                               status = ratings.glicko$ratings, 
-                               cval=ls.omega[j], gamma=ls.hfa[i], sort=FALSE)
-    }
-    log.likelihood.glicko[j, i] = ll.tmp
-  }
-}
-
-im.matrix <- log.likelihood.glicko
-image(x=ls.omega, y=ls.hfa,
-      z=log.likelihood.glicko, col=hcl.colors(300, "Spectral", rev = TRUE), 
-      ylab=expression(lambda), xlab=expression(k[0]),
-      main="Elo with Goal Diff Heatmap")
-
-
-best.ind = which(log.likelihood.glicko == max(log.likelihood.glicko), arr.ind = TRUE)
-best.omega = ls.omega[best.ind[[1]]]
-best.hfa = ls.hfa[best.ind[[2]]]
-# best.omega = 60
-# best.hfa = 100
-best.omega = 1242 # 2001:2015
-
+##### Set omega for Glicko model
 best.omega <- 60
 
 ##### Write the H&A four-step procedure
@@ -926,7 +791,7 @@ loss.df.2.rounded$quad.loss <- round(loss.df.2.rounded$quad.loss, 3)
 loss.df.2.rounded$quad.loss.sd <- round(loss.df.2.rounded$quad.loss.sd, 3)
 loss.df.2.rounded$info.loss <- round(loss.df.2.rounded$info.loss, 3)
 loss.df.2.rounded$info.loss.sd <- round(loss.df.2.rounded$info.loss.sd, 3)
-oo <- order(loss.df.2.rounded$quad.loss, decreasing=TRUE)
+oo <- order(loss.df.2.rounded$info.loss, decreasing=TRUE)
 loss.df.2.rounded <- loss.df.2.rounded[oo,]
 
 knitr::kable(loss.df, 'latex', vline='')
