@@ -990,15 +990,21 @@ max.odds.all[max.odds.all$max.bet == 1 &
                                max.odds.all$result == (max.odds.all$max.result / 2 - 0.5), 
                              'home.win']))
 
-apply(max.odds.all[,c('elo.b.earnings', 'elo.g.earnings', 'glicko.earnings', 
-                      'avg.earnings', 'max.earnings')], 2, sum)
+dollars.earned <- apply(max.odds.all[,c('elo.b.earnings', 'elo.g.earnings', 
+                                        'glicko.earnings', 'avg.earnings', 
+                                        'max.earnings')], 2, sum)
 
-apply(max.odds.all[,c('elo.b.earnings', 'elo.g.earnings', 'glicko.earnings', 
+roi <- apply(max.odds.all[,c('elo.b.earnings', 'elo.g.earnings', 'glicko.earnings', 
                       'avg.earnings', 'max.earnings')], 2, sum) / 
   apply(max.odds.all[,c('elo.b.bet', 'elo.g.bet', 'glicko.bet', 'avg.bet',
-                        'max.bet')], 2, sum)
+                        'max.bet')], 2, sum) * 100 - 100
 
+unit.bet.results <- data.frame('earnings' = dollars.earned, 
+                               'roi' = roi)
+rownames(unit.bet.results) <- c('ELO.b', 'ELO.g', 'GLICKO', 'AVG', 'MAX')
 
+knitr::kable(round(t(unit.bet.results), 2), 'latex', vline='', 
+  caption="Results from UNIT BET strategy compared across prediction methods.")
 
 
 
