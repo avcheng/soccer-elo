@@ -797,3 +797,223 @@ loss.df.2.rounded <- loss.df.2.rounded[oo,]
 knitr::kable(loss.df, 'latex', vline='')
 knitr::kable(loss.df.2.rounded, 'latex', vline='')
 
+
+##### Evaluate methods based on hypothetical bets
+
+## Gather maximum odds for each game in time.C.df
+max.odds.all <- data.frame('away.win'=rep(-1e6, dim(time.C.df)[1]),
+                           'draw'=rep(-1e6, dim(time.C.df)[1]), 
+                           'home.win'=rep(-1e6, dim(time.C.df)[1]),
+                           'result'=time.C.df$result)
+
+for (i in 1:dim(time.C.df.g)[1]) {
+  if (dim(odds[format(as.Date(odds$match_date), "%Y-%m") == 
+               format(as.Date(time.C.df.g[i, 'date']), "%Y-%m") & 
+               odds$home_team == time.C.df.g[i, 'home'] &
+               odds$away_team == time.C.df.g[i, 'away'],])[1] < 1) {
+    max.odds.all[i,c('away.win', 'draw', 'home.win')] <- rep(NA, 3)
+  } else {
+    ind <- which(format(as.Date(odds$match_date), "%Y-%m") == 
+                   format(as.Date(time.C.df.g[i, 'date']), "%Y-%m") & 
+                   odds$home_team == time.C.df.g[i, 'home'] &
+                   odds$away_team == time.C.df.g[i, 'away'])
+    if (length(ind) > 1) {
+      ind <- ind[which.min(abs(as.Date(odds[ind, 'match_date']) - 
+                                 as.Date(time.C.df.g[i, 'date'])))]
+    }
+    max.odds.all[i,c('away.win', 'draw', 'home.win')] <- 
+      c(odds[ind,'max_odds_away_win'],
+        odds[ind,'max_odds_draw'],
+        odds[ind,'max_odds_home_win'])
+  }
+}
+
+# For each prediction method, determine when to make a bet, and then determine
+# the outcome of these bets
+max.odds.all$elo.b <- apply(elo.b.probs, 1, max)
+max.odds.all$elo.b.result <- apply(elo.b.probs, 1, which.max)
+max.odds.all$elo.b.bet <- as.integer(max.odds.all$elo.b * 
+  ifelse(max.odds.all$elo.b.result == 1, max.odds.all$away.win, 
+         ifelse(max.odds.all$elo.b.result == 2, max.odds.all$draw, 
+                                                max.odds.all$home.win)) > 1)
+max.odds.all[is.na(max.odds.all$elo.b.bet), 'elo.b.bet'] <- 0
+max.odds.all$elo.b.earnings <- max.odds.all$elo.b.bet
+# max.odds.all[max.odds.all$elo.b.bet == 1 & 
+#                max.odds.all$result != max.odds.all$elo.b.result / 2 - 0.5, 
+#             'elo.b.earnings'] <- -1
+max.odds.all[max.odds.all$elo.b.bet == 1 & 
+               max.odds.all$result == (max.odds.all$elo.b.result / 2 - 0.5), 
+             'elo.b.earnings'] <- 
+  ifelse(max.odds.all[max.odds.all$elo.b.bet == 1 & 
+                        max.odds.all$result == (max.odds.all$elo.b.result / 2 - 0.5), 
+                      'elo.b.result'] == 1, 
+         max.odds.all[max.odds.all$elo.b.bet == 1 & 
+                        max.odds.all$result == (max.odds.all$elo.b.result / 2 - 0.5), 
+                      'away.win'], 
+         ifelse(max.odds.all[max.odds.all$elo.b.bet == 1 & 
+                               max.odds.all$result == (max.odds.all$elo.b.result / 2 - 0.5), 
+                               'elo.b.result'] == 2, 
+                max.odds.all[max.odds.all$elo.b.bet == 1 & 
+                               max.odds.all$result == (max.odds.all$elo.b.result / 2 - 0.5), 
+                               'draw'], 
+                max.odds.all[max.odds.all$elo.b.bet == 1 & 
+                               max.odds.all$result == (max.odds.all$elo.b.result / 2 - 0.5), 
+                             'home.win']))
+
+max.odds.all$elo.g <- apply(elo.g.probs, 1, max)
+max.odds.all$elo.g.result <- apply(elo.g.probs, 1, which.max)
+max.odds.all$elo.g.bet <- as.integer(max.odds.all$elo.g * 
+                                       ifelse(max.odds.all$elo.g.result == 1, max.odds.all$away.win, 
+                                              ifelse(max.odds.all$elo.g.result == 2, max.odds.all$draw, 
+                                                     max.odds.all$home.win)) > 1)
+max.odds.all[is.na(max.odds.all$elo.g.bet), 'elo.g.bet'] <- 0
+max.odds.all$elo.g.earnings <- max.odds.all$elo.g.bet
+# max.odds.all[max.odds.all$elo.g.bet == 1 & 
+#                max.odds.all$result != (max.odds.all$elo.g.result / 2 - 0.5), 
+#             'elo.g.earnings'] <- -1
+max.odds.all[max.odds.all$elo.g.bet == 1 & 
+               max.odds.all$result == (max.odds.all$elo.g.result / 2 - 0.5), 
+             'elo.g.earnings'] <- 
+  ifelse(max.odds.all[max.odds.all$elo.g.bet == 1 & 
+                        max.odds.all$result == (max.odds.all$elo.g.result / 2 - 0.5), 
+                      'elo.g.result'] == 1, 
+         max.odds.all[max.odds.all$elo.g.bet == 1 & 
+                        max.odds.all$result == (max.odds.all$elo.g.result / 2 - 0.5), 
+                      'away.win'], 
+         ifelse(max.odds.all[max.odds.all$elo.g.bet == 1 & 
+                               max.odds.all$result == (max.odds.all$elo.g.result / 2 - 0.5), 
+                             'elo.g.result'] == 2, 
+                max.odds.all[max.odds.all$elo.g.bet == 1 & 
+                               max.odds.all$result == (max.odds.all$elo.g.result / 2 - 0.5), 
+                             'draw'], 
+                max.odds.all[max.odds.all$elo.g.bet == 1 & 
+                               max.odds.all$result == (max.odds.all$elo.g.result / 2 - 0.5), 
+                             'home.win']))
+
+max.odds.all$glicko <- apply(glicko.probs, 1, max)
+max.odds.all$glicko.result <- apply(glicko.probs, 1, which.max)
+max.odds.all$glicko.bet <- as.integer(max.odds.all$glicko * 
+                                       ifelse(max.odds.all$glicko.result == 1, max.odds.all$away.win, 
+                                              ifelse(max.odds.all$glicko.result == 2, max.odds.all$draw, 
+                                                     max.odds.all$home.win)) > 1)
+max.odds.all[is.na(max.odds.all$glicko.bet), 'glicko.bet'] <- 0
+max.odds.all$glicko.earnings <- max.odds.all$glicko.bet
+# max.odds.all[max.odds.all$glicko.bet == 1 & 
+#                max.odds.all$result != (max.odds.all$glicko.result / 2 - 0.5) , 
+#             'glicko.earnings'] <- -1
+max.odds.all[max.odds.all$glicko.bet == 1 & 
+               max.odds.all$result == (max.odds.all$glicko.result / 2 - 0.5), 
+             'glicko.earnings'] <- 
+  ifelse(max.odds.all[max.odds.all$glicko.bet == 1 & 
+                        max.odds.all$result == (max.odds.all$glicko.result / 2 - 0.5), 
+                      'glicko.result'] == 1, 
+         max.odds.all[max.odds.all$glicko.bet == 1 & 
+                        max.odds.all$result == (max.odds.all$glicko.result / 2 - 0.5), 
+                      'away.win'], 
+         ifelse(max.odds.all[max.odds.all$glicko.bet == 1 & 
+                               max.odds.all$result == (max.odds.all$glicko.result / 2 - 0.5), 
+                             'glicko.result'] == 2, 
+                max.odds.all[max.odds.all$glicko.bet == 1 & 
+                               max.odds.all$result == (max.odds.all$glicko.result / 2 - 0.5), 
+                             'draw'], 
+                max.odds.all[max.odds.all$glicko.bet == 1 & 
+                               max.odds.all$result == (max.odds.all$glicko.result / 2 - 0.5), 
+                             'home.win']))
+
+max.odds.all$avg <- NA
+max.odds.all[rownames(betting.odds.pred),'avg'] <- 
+  apply(betting.odds.pred[,c("avg.p.loss", "avg.p.tie", "avg.p.win")], 1, max)
+max.odds.all$avg.result <- NA
+max.odds.all[rownames(betting.odds.pred), 'avg.result'] <- 
+  apply(betting.odds.pred[,c("avg.p.loss", "avg.p.tie", "avg.p.win")], 1, 
+        which.max)
+max.odds.all$avg.bet <- as.integer(max.odds.all$avg * 
+                                        ifelse(max.odds.all$avg.result == 1, max.odds.all$away.win, 
+                                               ifelse(max.odds.all$avg.result == 2, max.odds.all$draw, 
+                                                      max.odds.all$home.win)) > 1)
+max.odds.all[is.na(max.odds.all$avg.bet), 'avg.bet'] <- 0
+max.odds.all$avg.earnings <- max.odds.all$avg.bet
+# max.odds.all[max.odds.all$avg.bet == 1 & 
+#                max.odds.all$result != (max.odds.all$avg.result / 2 - 0.5), 
+#             'avg.earnings'] <- -1
+max.odds.all[max.odds.all$avg.bet == 1 & 
+               max.odds.all$result == (max.odds.all$avg.result / 2 - 0.5), 
+             'avg.earnings'] <- 
+  ifelse(max.odds.all[max.odds.all$avg.bet == 1 & 
+                        max.odds.all$result == (max.odds.all$avg.result / 2 - 0.5), 
+                      'avg.result'] == 1, 
+         max.odds.all[max.odds.all$avg.bet == 1 & 
+                        max.odds.all$result == (max.odds.all$avg.result / 2 - 0.5), 
+                      'away.win'], 
+         ifelse(max.odds.all[max.odds.all$avg.bet == 1 & 
+                               max.odds.all$result == (max.odds.all$avg.result / 2 - 0.5), 
+                             'avg.result'] == 2, 
+                max.odds.all[max.odds.all$avg.bet == 1 & 
+                               max.odds.all$result == (max.odds.all$avg.result / 2 - 0.5), 
+                             'draw'], 
+                max.odds.all[max.odds.all$avg.bet == 1 & 
+                               max.odds.all$result == (max.odds.all$avg.result / 2 - 0.5), 
+                             'home.win']))
+
+max.odds.all$max <- NA
+max.odds.all[rownames(betting.odds.pred),'max'] <- 
+  apply(betting.odds.pred[,c("max.p.loss", "max.p.tie", "max.p.win")], 1, max)
+max.odds.all$max.result <- NA
+max.odds.all[rownames(betting.odds.pred), 'max.result'] <- 
+  apply(betting.odds.pred[,c("max.p.loss", "max.p.tie", "max.p.win")], 1, 
+        which.max)
+max.odds.all$max.bet <- as.integer(max.odds.all$max * 
+                                        ifelse(max.odds.all$max.result == 1, max.odds.all$away.win, 
+                                               ifelse(max.odds.all$max.result == 2, max.odds.all$draw, 
+                                                      max.odds.all$home.win)) > 1)
+max.odds.all[is.na(max.odds.all$max.bet), 'max.bet'] <- 0
+max.odds.all$max.earnings <- max.odds.all$max.bet
+# max.odds.all[max.odds.all$max.bet == 1 & 
+#               max.odds.all$result != (max.odds.all$max.result / 2 - 0.5), 
+#             'max.earnings'] <- -1
+max.odds.all[max.odds.all$max.bet == 1 & 
+               max.odds.all$result == (max.odds.all$max.result / 2 - 0.5), 
+             'max.earnings'] <- 
+  ifelse(max.odds.all[max.odds.all$max.bet == 1 & 
+                        max.odds.all$result == (max.odds.all$max.result / 2 - 0.5), 
+                      'max.result'] == 1, 
+         max.odds.all[max.odds.all$max.bet == 1 & 
+                        max.odds.all$result == (max.odds.all$max.result / 2 - 0.5), 
+                      'away.win'], 
+         ifelse(max.odds.all[max.odds.all$max.bet == 1 & 
+                               max.odds.all$result == (max.odds.all$max.result / 2 - 0.5), 
+                             'max.result'] == 2, 
+                max.odds.all[max.odds.all$max.bet == 1 & 
+                               max.odds.all$result == (max.odds.all$max.result / 2 - 0.5), 
+                             'draw'], 
+                max.odds.all[max.odds.all$max.bet == 1 & 
+                               max.odds.all$result == (max.odds.all$max.result / 2 - 0.5), 
+                             'home.win']))
+
+apply(max.odds.all[,c('elo.b.earnings', 'elo.g.earnings', 'glicko.earnings', 
+                      'avg.earnings', 'max.earnings')], 2, sum)
+
+apply(max.odds.all[,c('elo.b.earnings', 'elo.g.earnings', 'glicko.earnings', 
+                      'avg.earnings', 'max.earnings')], 2, sum) / 
+  apply(max.odds.all[,c('elo.b.bet', 'elo.g.bet', 'glicko.bet', 'avg.bet',
+                        'max.bet')], 2, sum)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
