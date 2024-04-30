@@ -688,7 +688,7 @@ loss.df.2 <- data.frame('method'=c('ELO.b', 'ELO.g', 'GLICKO', 'AVG', 'MAX', 'UN
                           mean(-1 * log2(betting.odds.pred$avg.prob)),
                           mean(-1 * log2(betting.odds.pred$max.prob)),
                           -1 * log2(1/3),
-                          mean(-1 * log2(pred.freq.prob(time.C.df)))),
+                          mean(-1 * log2(pred.freq.prob(time.C.df[indx,])))),
                       'info.loss.sd'=
                         c(info.loss.sd(time.C.df[indx,], elo.base.result.fit$coefficients, elo.base.result.fit$zeta),
                           info.loss.sd(time.C.df.g[indx,], elo.g.result.fit$coefficients, elo.g.result.fit$zeta),
@@ -696,7 +696,7 @@ loss.df.2 <- data.frame('method'=c('ELO.b', 'ELO.g', 'GLICKO', 'AVG', 'MAX', 'UN
                           sd(-1 * log2(betting.odds.pred$avg.prob)),
                           sd(-1 * log2(betting.odds.pred$max.prob)),
                           0,
-                          sd(-1 * log2(pred.freq.prob(time.C.df)))))
+                          sd(-1 * log2(pred.freq.prob(time.C.df[indx,])))))
 
 ##### Recreate Fig. 3 for our ordered logit model with goal difference
 dummy.diff <- -600:600
@@ -717,7 +717,7 @@ png('pred-prob_vs_rating-diff.png', width=600, height=500)
 plot(dummy.loss.df$prob ~ dummy.loss.df$rating.diff, col='red', type='l', 
      main="Ordered Logit Predicted Probabilities vs. Rating Difference,\nwith Goal Difference", 
      ylab="Predicted Probability",
-     xlab="Rating Difference\nHFA = 75.29",
+     xlab="Rating Difference\nHFA = -251.56",
      ylim=c(0,1))
 lines(dummy.draw.df$prob ~ dummy.draw.df$rating.diff, col='purple')
 lines(dummy.win.df$prob ~ dummy.win.df$rating.diff, col='blue')
@@ -760,7 +760,7 @@ png('pred-prob_vs_rating-diff_base-elo.png', width=600, height=500)
 plot(dummy.loss.df$prob ~ dummy.loss.df$rating.diff, col='red', type='l', 
      main="Ordered Logit Predicted Probabilities vs. Rating Difference,\nwithout Goal Difference", 
      ylab="Predicted Probability",
-     xlab="Rating Difference\nHFA = 75.00", 
+     xlab="Rating Difference\nHFA = -230", 
      ylim=c(0,1))
 lines(dummy.draw.df$prob ~ dummy.draw.df$rating.diff, col='purple')
 lines(dummy.win.df$prob ~ dummy.win.df$rating.diff, col='blue')
@@ -784,6 +784,33 @@ for (i in 1:length(range)) {
 }
 hfa.est <- range[which.min(prob.diffs)]
 
+##### Recreate Fig. 3 for our ordered logit model with glicko
+dummy.diff <- -600:600
+dummy.loss.df <- data.frame('result'=as.factor(rep(0, length(dummy.diff))), 
+                            'rating.diff'=dummy.diff)
+dummy.loss.df$prob <- pred.prob(dummy.loss.df, glicko.base.result.fit$coefficients, 
+                                glicko.base.result.fit$zeta)
+dummy.draw.df <- data.frame('result'=as.factor(rep(0.5, length(dummy.diff))), 
+                            'rating.diff'=dummy.diff)
+dummy.draw.df$prob <- pred.prob(dummy.draw.df, glicko.base.result.fit$coefficients, 
+                                glicko.base.result.fit$zeta)
+dummy.win.df <- data.frame('result'=as.factor(rep(1, length(dummy.diff))), 
+                           'rating.diff'=dummy.diff)
+dummy.win.df$prob <- pred.prob(dummy.win.df, glicko.base.result.fit$coefficients, 
+                               glicko.base.result.fit$zeta)
+
+# png('pred-prob_vs_rating-diff_base-elo.png', width=600, height=500)
+plot(dummy.loss.df$prob ~ dummy.loss.df$rating.diff, col='red', type='l', 
+     main="Ordered Logit Predicted Probabilities vs. Rating Difference,\nwithout Goal Difference", 
+     ylab="Predicted Probability",
+     xlab="Rating Difference\nHFA = -230", 
+     ylim=c(0,1))
+lines(dummy.draw.df$prob ~ dummy.draw.df$rating.diff, col='purple')
+lines(dummy.win.df$prob ~ dummy.win.df$rating.diff, col='blue')
+legend(200,0.5, c('Home Loss', 'Draw', 'Home Win'), 
+       col=c('red', 'purple', 'blue'), lty=1)
+# dev.off()
+
 
 # Create table for write-up/presentation
 loss.df.2.rounded <- loss.df.2
@@ -792,9 +819,17 @@ loss.df.2.rounded$quad.loss.sd <- round(loss.df.2.rounded$quad.loss.sd, 3)
 loss.df.2.rounded$info.loss <- round(loss.df.2.rounded$info.loss, 3)
 loss.df.2.rounded$info.loss.sd <- round(loss.df.2.rounded$info.loss.sd, 3)
 oo <- order(loss.df.2.rounded$info.loss, decreasing=TRUE)
-loss.df.2.rounded <- loss.df.2.rounded[oo,]
+# loss.df.2.rounded <- loss.df.2.rounded[oo,]
 
-knitr::kable(loss.df, 'latex', vline='')
+loss.df.rounded <- loss.df
+loss.df.rounded$quad.loss <- round(loss.df.rounded$quad.loss, 3)
+loss.df.rounded$quad.loss.sd <- round(loss.df.rounded$quad.loss.sd, 3)
+loss.df.rounded$info.loss <- round(loss.df.rounded$info.loss, 3)
+loss.df.rounded$info.loss.sd <- round(loss.df.rounded$info.loss.sd, 3)
+oo <- order(loss.df.rounded$info.loss, decreasing=TRUE)
+loss.df.rounded <- loss.df.rounded[oo,]
+
+knitr::kable(loss.df.rounded, 'latex', vline='')
 knitr::kable(loss.df.2.rounded, 'latex', vline='')
 
 
@@ -828,6 +863,9 @@ for (i in 1:dim(time.C.df.g)[1]) {
   }
 }
 
+# Set edge value 
+edge <- 1.1
+
 # For each prediction method, determine when to make a bet, and then determine
 # the outcome of these bets
 max.odds.all$elo.b <- apply(elo.b.probs, 1, max)
@@ -835,11 +873,11 @@ max.odds.all$elo.b.result <- apply(elo.b.probs, 1, which.max)
 max.odds.all$elo.b.bet <- as.integer(max.odds.all$elo.b * 
   ifelse(max.odds.all$elo.b.result == 1, max.odds.all$away.win, 
          ifelse(max.odds.all$elo.b.result == 2, max.odds.all$draw, 
-                                                max.odds.all$home.win)) > 1)
+                                                max.odds.all$home.win)) > edge)
 max.odds.all[is.na(max.odds.all$elo.b.bet), 'elo.b.bet'] <- 0
-max.odds.all$elo.b.earnings <- max.odds.all$elo.b.bet
+max.odds.all$elo.b.earnings <- 0
 # max.odds.all[max.odds.all$elo.b.bet == 1 & 
-#                max.odds.all$result != max.odds.all$elo.b.result / 2 - 0.5, 
+#               max.odds.all$result != max.odds.all$elo.b.result / 2 - 0.5, 
 #             'elo.b.earnings'] <- -1
 max.odds.all[max.odds.all$elo.b.bet == 1 & 
                max.odds.all$result == (max.odds.all$elo.b.result / 2 - 0.5), 
@@ -865,12 +903,12 @@ max.odds.all$elo.g.result <- apply(elo.g.probs, 1, which.max)
 max.odds.all$elo.g.bet <- as.integer(max.odds.all$elo.g * 
                                        ifelse(max.odds.all$elo.g.result == 1, max.odds.all$away.win, 
                                               ifelse(max.odds.all$elo.g.result == 2, max.odds.all$draw, 
-                                                     max.odds.all$home.win)) > 1)
+                                                     max.odds.all$home.win)) > edge)
 max.odds.all[is.na(max.odds.all$elo.g.bet), 'elo.g.bet'] <- 0
-max.odds.all$elo.g.earnings <- max.odds.all$elo.g.bet
+max.odds.all$elo.g.earnings <- 0
 # max.odds.all[max.odds.all$elo.g.bet == 1 & 
-#                max.odds.all$result != (max.odds.all$elo.g.result / 2 - 0.5), 
-#             'elo.g.earnings'] <- -1
+#               max.odds.all$result != (max.odds.all$elo.g.result / 2 - 0.5), 
+#           'elo.g.earnings'] <- -1
 max.odds.all[max.odds.all$elo.g.bet == 1 & 
                max.odds.all$result == (max.odds.all$elo.g.result / 2 - 0.5), 
              'elo.g.earnings'] <- 
@@ -895,12 +933,12 @@ max.odds.all$glicko.result <- apply(glicko.probs, 1, which.max)
 max.odds.all$glicko.bet <- as.integer(max.odds.all$glicko * 
                                        ifelse(max.odds.all$glicko.result == 1, max.odds.all$away.win, 
                                               ifelse(max.odds.all$glicko.result == 2, max.odds.all$draw, 
-                                                     max.odds.all$home.win)) > 1)
+                                                     max.odds.all$home.win)) > edge)
 max.odds.all[is.na(max.odds.all$glicko.bet), 'glicko.bet'] <- 0
-max.odds.all$glicko.earnings <- max.odds.all$glicko.bet
+max.odds.all$glicko.earnings <- 0
 # max.odds.all[max.odds.all$glicko.bet == 1 & 
-#                max.odds.all$result != (max.odds.all$glicko.result / 2 - 0.5) , 
-#             'glicko.earnings'] <- -1
+#               max.odds.all$result != (max.odds.all$glicko.result / 2 - 0.5) , 
+#           'glicko.earnings'] <- -1
 max.odds.all[max.odds.all$glicko.bet == 1 & 
                max.odds.all$result == (max.odds.all$glicko.result / 2 - 0.5), 
              'glicko.earnings'] <- 
@@ -930,12 +968,12 @@ max.odds.all[rownames(betting.odds.pred), 'avg.result'] <-
 max.odds.all$avg.bet <- as.integer(max.odds.all$avg * 
                                         ifelse(max.odds.all$avg.result == 1, max.odds.all$away.win, 
                                                ifelse(max.odds.all$avg.result == 2, max.odds.all$draw, 
-                                                      max.odds.all$home.win)) > 1)
+                                                      max.odds.all$home.win)) > edge)
 max.odds.all[is.na(max.odds.all$avg.bet), 'avg.bet'] <- 0
-max.odds.all$avg.earnings <- max.odds.all$avg.bet
+max.odds.all$avg.earnings <- 0
 # max.odds.all[max.odds.all$avg.bet == 1 & 
-#                max.odds.all$result != (max.odds.all$avg.result / 2 - 0.5), 
-#             'avg.earnings'] <- -1
+#               max.odds.all$result != (max.odds.all$avg.result / 2 - 0.5), 
+#           'avg.earnings'] <- -1
 max.odds.all[max.odds.all$avg.bet == 1 & 
                max.odds.all$result == (max.odds.all$avg.result / 2 - 0.5), 
              'avg.earnings'] <- 
@@ -965,12 +1003,12 @@ max.odds.all[rownames(betting.odds.pred), 'max.result'] <-
 max.odds.all$max.bet <- as.integer(max.odds.all$max * 
                                         ifelse(max.odds.all$max.result == 1, max.odds.all$away.win, 
                                                ifelse(max.odds.all$max.result == 2, max.odds.all$draw, 
-                                                      max.odds.all$home.win)) > 1)
+                                                      max.odds.all$home.win)) > edge)
 max.odds.all[is.na(max.odds.all$max.bet), 'max.bet'] <- 0
-max.odds.all$max.earnings <- max.odds.all$max.bet
+max.odds.all$max.earnings <- 0
 # max.odds.all[max.odds.all$max.bet == 1 & 
-#               max.odds.all$result != (max.odds.all$max.result / 2 - 0.5), 
-#             'max.earnings'] <- -1
+#              max.odds.all$result != (max.odds.all$max.result / 2 - 0.5), 
+#           'max.earnings'] <- -1
 max.odds.all[max.odds.all$max.bet == 1 & 
                max.odds.all$result == (max.odds.all$max.result / 2 - 0.5), 
              'max.earnings'] <- 
@@ -992,14 +1030,19 @@ max.odds.all[max.odds.all$max.bet == 1 &
 
 dollars.earned <- apply(max.odds.all[,c('elo.b.earnings', 'elo.g.earnings', 
                                         'glicko.earnings', 'avg.earnings', 
-                                        'max.earnings')], 2, sum)
-
-roi <- apply(max.odds.all[,c('elo.b.earnings', 'elo.g.earnings', 'glicko.earnings', 
-                      'avg.earnings', 'max.earnings')], 2, sum) / 
+                                        'max.earnings')], 2, sum) - 
   apply(max.odds.all[,c('elo.b.bet', 'elo.g.bet', 'glicko.bet', 'avg.bet',
-                        'max.bet')], 2, sum) * 100 - 100
+                        'max.bet')], 2, sum)
 
-unit.bet.results <- data.frame('earnings' = dollars.earned, 
+roi <- dollars.earned / 
+  apply(max.odds.all[,c('elo.b.bet', 'elo.g.bet', 'glicko.bet', 'avg.bet',
+                        'max.bet')], 2, sum) * 100
+
+unit.bet.results <- data.frame('bets.placed' = 
+                                 apply(max.odds.all[,c('elo.b.bet', 'elo.g.bet',
+                                                       'glicko.bet', 'avg.bet',
+                                                       'max.bet')], 2, sum), 
+                               'earnings' = dollars.earned, 
                                'roi' = roi)
 rownames(unit.bet.results) <- c('ELO.b', 'ELO.g', 'GLICKO', 'AVG', 'MAX')
 
